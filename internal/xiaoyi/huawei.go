@@ -171,3 +171,10 @@ func ParseIDToken(idToken string) IDClaims {
 	}
 	return IDClaims{UID: strings.TrimSpace(claims.UID), Name: strings.TrimSpace(name), ClientID: strings.TrimSpace(client)}
 }
+
+func truncateText(text string, max int) string {
+	if len(text) > max {
+		return text[:max] + "…"
+	}
+	return text
+}

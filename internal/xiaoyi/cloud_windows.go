@@ -305,10 +305,3 @@ func firstNonEmpty(values ...string) string {
 	}
 	return ""
 }
-
-func truncateText(text string, max int) string {
-	if len(text) > max {
-		return text[:max] + "…"
-	}
-	return text
-}

@@ -19,7 +19,7 @@ const (
 	// PluginName is the display name used by management clients.
 	PluginName = "Xiaoyi OAuth"
 	// Version is the plugin release version.
-	Version = "0.3.0"
+	Version = "0.3.1"
 
 	authFileName = "xiaoyiwork-local.json"
 )

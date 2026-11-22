@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.3.0 (2026-11-23)
+## v0.3.1 (2026-11-23)
 
 - **纯华为账号登录，不需要安装小艺Work**：插件内置 PKCE OAuth + `127.0.0.1:17355/auth/callback` 回调服务器，授权后自动换 token、创建 businessCredential。
 - 登录凭据含 Huawei access/refresh token、businessCredential、uid、deviceId；过期时直接用华为 refresh token 续期。
