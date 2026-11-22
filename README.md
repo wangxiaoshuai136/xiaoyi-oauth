@@ -2,7 +2,7 @@
 
 # Xiaoyi OAuth（cpa-plugin-xiaoyiwork）
 
-把已登录的 **小艺Work** 账号接进 **EasyCLIProxyAPI / CLIProxyAPI（ECPA）**。首次从桌面端导入一次登录态，之后**不需要小艺Work 保持运行**，插件直接调用小艺云端模型接口。
+把 **华为账号** 接进 **EasyCLIProxyAPI / CLIProxyAPI（ECPA）**，直接使用小艺云端模型。**不需要安装或启动小艺Work 桌面端**：在 ECPA 里用华为账号登录一次即可。
 
 > Windows 专用：登录态存在 `HKCU\Software\ClawDesktop\keychain`，主密钥由 DPAPI(CurrentUser) 保护。
 
@@ -27,7 +27,7 @@ x-request-from: xiaoyiWork
 
 ## 安装
 
-1. 把 `xiaoyiwork-v0.2.2.dll` 放到 `<EasyCLIProxyAPI 目录>\cpa-core\plugins\windows\amd64\`。
+1. 把 `xiaoyiwork-v0.3.0.dll` 放到 `<EasyCLIProxyAPI 目录>\cpa-core\plugins\windows\amd64\`。
 2. 在 `cpa-core\config.yaml` 的 `plugins.configs` 下启用：
 
 ```yaml
@@ -42,11 +42,11 @@ plugins:
 
 ## 账号与登录
 
-- **首次导入**：在小艺Work 里登录一次，插件注册时会自动读取 keychain，生成 `oauth/xiaoyiwork-<uid>.json`（含 businessCredential、access/refresh token、deviceId）。
-- **之后**：小艺Work 可以退出；插件会直接走云端，并在 401/到期时自动刷新凭据。
-- **手动登录**：在 ECPA 凭据页点“开始登录”，插件返回本地状态页，几秒内完成导入。
+- **纯账号登录**：在 ECPA 凭据页点“开始登录”，浏览器打开华为账号登录页；授权后回调到本机 `127.0.0.1:17355`，插件自动换取 token 并创建云端凭据。全程不需要小艺Work。
+- **兼容导入**：如果本机恰好装过小艺Work 且已登录，插件也会在注册时读取它的 keychain 作为兜底。
+- **续期**：用华为 refresh token 自动换新 access token，再换新 businessCredential；不需要桌面端。
 - **账号标签**：`Xiaoyi OAuth (温保禄)`（取 id_token 的 given_name/nickname；没有时用 uid 前后各 4 位）。
-- **刷新周期**：`auth.refresh` 每 6 小时或 401 时刷新；refresh token 失效才需要重新在小艺Work 登录。
+- **刷新周期**：`auth.refresh` 每 6 小时或 401 时刷新；refresh token 失效才需要重新点“开始登录”。
 
 ## 配置
 
@@ -77,7 +77,8 @@ plugins:
 
 ## 已验证（2026-11-22）
 
-- **小艺Work 已退出、19693 未监听**时：8 个模型全部返回 200，非流式 `content=OK`。
+- **小艺Work 未安装/未启动、19693 未监听**时：8 个模型全部返回 200，非流式 `content=OK`。
+- 华为账号登录：authorize 页 200、回调服务器监听 `127.0.0.1:17355`、错误 state 返回 400。
 - 流式：标准 chunk + usage + `data: [DONE]`。
 - `tools`：`finish_reason=tool_calls`，arguments 正确合并。
 - `reasoning_effort=high`：正常返回 reasoning_content。
@@ -87,14 +88,14 @@ plugins:
 
 - 看到 502「连接小艺Work 本地代理失败」是 0.1.x 本地模式在桌面端关闭时的旧行为；0.2.x 默认云端直连后不再出现。
 - 100% 失败统计可能包含旧版本配合 `request-retry: 200` 产生的重试风暴；修复后新请求正常。
-- 401/403：refresh token 失效，重新在小艺Work 登录一次，再点插件的“开始登录”。
+- 401 `authFailed`：当前 businessCredential 已被新的登录/刷新替换或失效；点一次“开始登录”重新授权即可（云端同一账号同一设备只保留一个有效凭据）。
 
 ## 构建
 
 ```powershell
 $env:PATH = 'C:\msys64\mingw64\bin;' + $env:PATH
 $env:CGO_ENABLED = '1'; $env:GOOS = 'windows'; $env:GOARCH = 'amd64'; $env:GOAMD64 = 'v1'
-go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o bin/xiaoyiwork-v0.2.2.dll ./cmd/xiaoyiwork-plugin
+go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o bin/xiaoyiwork-v0.3.0.dll ./cmd/xiaoyiwork-plugin
 ```
 
 必须用 `-buildmode=c-shared`；CI 在 Linux 上用 `x86_64-w64-mingw32-gcc` 交叉编译。

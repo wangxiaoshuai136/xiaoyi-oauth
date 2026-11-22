@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.0 (2026-11-23)
+
+- **纯华为账号登录，不需要安装小艺Work**：插件内置 PKCE OAuth + `127.0.0.1:17355/auth/callback` 回调服务器，授权后自动换 token、创建 businessCredential。
+- 登录凭据含 Huawei access/refresh token、businessCredential、uid、deviceId；过期时直接用华为 refresh token 续期。
+- 若本机已装过小艺Work，仍保留 keychain 自动导入作为兜底；回调端口被占用时回退到 keychain。
+- 登录状态页文案改为「无需安装或启动小艺Work」。
+
 ## v0.2.2 (2026-11-22)
 
 - 所有模型声明 `low / medium / high` 思考档位（可关闭），并把 `reasoning_effort` 透传给云端；修复「思考强度不能选」。

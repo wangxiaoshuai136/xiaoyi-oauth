@@ -19,7 +19,7 @@ const (
 	// PluginName is the display name used by management clients.
 	PluginName = "Xiaoyi OAuth"
 	// Version is the plugin release version.
-	Version = "0.2.2"
+	Version = "0.3.0"
 
 	authFileName = "xiaoyiwork-local.json"
 )
@@ -59,6 +59,8 @@ type Plugin struct {
 	client     *xiaoyi.Client
 	cloudMu    sync.Mutex
 	cloudCache map[string]xiaoyi.BusinessCredential
+	loginMu    sync.Mutex
+	login      *oauthSession
 }
 
 // NewPlugin creates an uninitialised plugin instance.

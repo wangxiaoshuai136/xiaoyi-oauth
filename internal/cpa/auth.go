@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/wangxiaoshuai136/xiaoyi-oauth/internal/pluginabi"
 	"github.com/wangxiaoshuai136/xiaoyi-oauth/internal/pluginapi"
 	"github.com/wangxiaoshuai136/xiaoyi-oauth/internal/xiaoyi"
@@ -83,46 +82,6 @@ func looksLikeXiaoyiAuth(req pluginapi.AuthParseRequest) bool {
 		}
 	}
 	return false
-}
-
-func (p *Plugin) handleAuthLoginStart(raw []byte) (any, error) {
-	state := uuid.NewString()
-	payload, err := importCloudCredential()
-	panel := strings.TrimRight(p.Config().PanelBaseURL, "/")
-	url := fmt.Sprintf("%s/v0/resource/plugins/%s/status?state=%s", panel, PluginID, state)
-	message := "正在导入小艺Work 云端登录态"
-	if err != nil {
-		message = "未找到小艺Work 登录态，请先在小艺Work 中登录一次：" + err.Error()
-	}
-	return pluginapi.AuthLoginStartResponse{
-		Provider:  PluginID,
-		URL:       url,
-		State:     state,
-		ExpiresAt: time.Now().Add(15 * time.Minute),
-		Metadata: map[string]any{
-			"message": message,
-			"uid":     payload.UID,
-		},
-	}, nil
-}
-
-func (p *Plugin) handleAuthLoginPoll(raw []byte) (any, error) {
-	payload, err := importCloudCredential()
-	if err != nil || payload.BusinessCredential == "" {
-		message := "请先在小艺Work 中完成一次登录"
-		if err != nil {
-			message += "：" + err.Error()
-		}
-		return pluginapi.AuthLoginPollResponse{Status: pluginapi.AuthLoginStatusPending, Message: message}, nil
-	}
-	storage, _ := json.Marshal(payload)
-	auth := authData(payload.UID, payload.DisplayName, "keychain", storage)
-	auth.NextRefreshAfter = time.Now().Add(6 * time.Hour)
-	return pluginapi.AuthLoginPollResponse{
-		Status:  pluginapi.AuthLoginStatusSuccess,
-		Message: "已导入小艺Work 云端凭证（" + labelFor(payload) + "）",
-		Auth:    auth,
-	}, nil
 }
 
 func (p *Plugin) handleAuthRefresh(raw []byte) (any, error) {
@@ -269,6 +228,42 @@ func resolveOAuthDir() string {
 		}
 	}
 	return `../oauth`
+}
+
+// persistCloudCredential keeps the newest business credential on disk: the
+// cloud allows only one live credential per account/device, so losing it would
+// force another browser login.
+func (p *Plugin) persistCloudCredential(auth *requestAuth) {
+	if auth == nil || auth.UID == "" || auth.Auth.BusinessCredential == "" {
+		return
+	}
+	path := filepath.Join(resolveOAuthDir(), "xiaoyiwork-"+auth.UID+".json")
+	var payload authFilePayload
+	if raw, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(raw, &payload)
+	}
+	payload.Type = PluginID
+	payload.Provider = PluginID
+	payload.OAuthProvider = PluginID
+	payload.UID = auth.UID
+	payload.AccountID = auth.UID
+	payload.BusinessCredential = auth.Auth.BusinessCredential
+	payload.BusinessValidUntil = auth.BusinessValidUntil
+	payload.AccessToken = auth.AccessToken
+	payload.AccessTokenExp = auth.AccessTokenExp
+	if auth.RefreshToken != "" {
+		payload.RefreshToken = auth.RefreshToken
+	}
+	payload.ClientID = auth.ClientID
+	payload.DeviceID = auth.DeviceID
+	payload.KeySource = "refreshed"
+	payload.UpdatedAt = time.Now().Format(time.RFC3339)
+	if payload.Name == "" {
+		payload.Name = labelFor(payload)
+	}
+	if merged, err := json.Marshal(payload); err == nil {
+		_ = os.WriteFile(path, merged, 0o600)
+	}
 }
 
 // storedProxyKey returns a local-proxy key persisted in the credential.

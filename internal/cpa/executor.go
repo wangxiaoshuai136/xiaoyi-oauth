@@ -55,14 +55,15 @@ func (p *Plugin) handleExecutorIdentifier() (any, error) {
 // requestAuth is everything one upstream request needs, plus what a refresh
 // would need if the cloud credential expires.
 type requestAuth struct {
-	Auth           xiaoyi.Auth
-	Local          bool
-	UID            string
-	DeviceID       string
-	ClientID       string
-	AccessToken    string
-	AccessTokenExp int64
-	RefreshToken   string
+	Auth               xiaoyi.Auth
+	Local              bool
+	UID                string
+	DeviceID           string
+	ClientID           string
+	AccessToken        string
+	AccessTokenExp     int64
+	RefreshToken       string
+	BusinessValidUntil int64
 }
 
 func (p *Plugin) authForRequest(req rpcExecutorRequest) (requestAuth, error) {
@@ -146,21 +147,33 @@ func (p *Plugin) refreshCloudAuth(ctx context.Context, auth *requestAuth) error 
 		if auth.RefreshToken == "" {
 			return fmt.Errorf("refresh token 为空，需要重新登录小艺Work")
 		}
-		fresh, err := xiaoyi.RefreshAccessToken(ctx, auth.Auth.BusinessCredential, auth.UID, auth.DeviceID, auth.RefreshToken)
-		if err != nil {
-			return err
+		fresh, gatewayErr := xiaoyi.RefreshAccessToken(ctx, auth.Auth.BusinessCredential, auth.UID, auth.DeviceID, auth.RefreshToken)
+		var tokens xiaoyi.OAuthTokens
+		if gatewayErr == nil {
+			tokens = xiaoyi.OAuthTokens{AccessToken: fresh, ExpiresAt: time.Now().Add(time.Hour).UnixMilli()}
+		} else {
+			tokens, gatewayErr = xiaoyi.RefreshOAuth(ctx, auth.RefreshToken)
+			if gatewayErr != nil {
+				return gatewayErr
+			}
 		}
-		access = fresh
-		auth.AccessToken = fresh
+		access = tokens.AccessToken
+		auth.AccessToken = tokens.AccessToken
+		auth.AccessTokenExp = tokens.ExpiresAt
+		if tokens.RefreshToken != "" {
+			auth.RefreshToken = tokens.RefreshToken
+		}
 	}
 	credential, validUntil, err := xiaoyi.CreateBusinessCredential(ctx, access, auth.UID, auth.DeviceID, auth.ClientID)
 	if err != nil {
 		return err
 	}
 	auth.Auth.BusinessCredential = credential
+	auth.BusinessValidUntil = validUntil
 	p.cloudMu.Lock()
 	p.cloudCache[auth.UID] = xiaoyi.BusinessCredential{Credential: credential, UID: auth.UID, ValidUntil: validUntil}
 	p.cloudMu.Unlock()
+	p.persistCloudCredential(auth)
 	return nil
 }
 

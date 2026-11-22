@@ -72,11 +72,11 @@ code{background:#0b0e14;border:1px solid #262b36;border-radius:6px;padding:1px 5
 .hint{margin-top:18px;padding:12px 14px;border-radius:10px;background:#101a14;border:1px solid #1f3a2a;color:#9fe0b5}
 </style></head><body><main>
 <h1>Xiaoyi OAuth 登录</h1>
-<p>这个窗口只是状态提示。真正的小艺Work 凭据由桌面端保存，插件在后台读取。</p>
+<p>用华为账号直接登录，<b>不需要安装或启动小艺Work 桌面端</b>。</p>
 <ol>
-<li>确认 <b>小艺Work 桌面端</b> 已启动并登录。</li>
-<li>回到 ECPA 的登录窗口，插件会在几秒内自动完成导入。</li>
-<li>导入后，账号会以 <code>Xiaoyi OAuth (uid)</code> 出现在凭据列表，可正常启用/禁用。</li>
+<li>在 ECPA 里点击「开始登录」，浏览器会打开华为账号登录页。</li>
+<li>完成登录与授权，浏览器会跳回本机回调，插件自动换取凭据。</li>
+<li>回到 ECPA，账号会以 <code>Xiaoyi OAuth (姓名)</code> 出现，可正常启用/禁用。</li>
 </ol>
-<div class="hint">导入的凭据包含 proxyKey，便于网关在没有重新解密的情况下路由；401 时插件会自动重读桌面端凭据。</div>
+<div class="hint">凭据包含云端 businessCredential 与 refresh token；过期时插件会自动续期，无需桌面端。</div>
 </main></body></html>`
