@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.1.0)"
+        required: false
+
+permissions:
+  contents: write
+
+env:
+  PLUGIN_ID: xiaoyiwork
+
+jobs:
+  build:
+    name: Build Windows DLL
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - name: Install cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64 zip
+
+      - name: Determine version
+        id: ver
+        shell: bash
+        run: |
+          RAW="${{ github.event.inputs.tag || github.ref_name }}"
+          if [ -z "$RAW" ] || [ "$RAW" = "main" ] || [ "$RAW" = "master" ]; then
+            RAW="v0.0.0-dev.${GITHUB_RUN_NUMBER}"
+          fi
+          VERSION="${RAW#v}"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Test
+        run: go test ./internal/...
+
+      - name: Build DLL
+        env:
+          CGO_ENABLED: "1"
+          GOOS: windows
+          GOARCH: amd64
+          GOAMD64: v1
+          CC: x86_64-w64-mingw32-gcc
+          CGO_CFLAGS: "-march=x86-64"
+        run: |
+          mkdir -p out
+          go build -buildmode=c-shared -trimpath -ldflags "-s -w" \
+            -o "out/${PLUGIN_ID}-v${{ steps.ver.outputs.version }}.dll" ./cmd/xiaoyiwork-plugin
+          (cd out && zip -j "../${PLUGIN_ID}_${{ steps.ver.outputs.version }}_windows_amd64.zip" *.dll)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PLUGIN_ID }}-windows-amd64
+          path: "${{ env.PLUGIN_ID }}_*_windows_amd64.zip"
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.tag != ''
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Checksums and release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd artifacts
+          sha256sum *.zip > checksums.txt
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          gh release upload "$TAG" *.zip checksums.txt --clobber -R "${{ github.repository }}" || \
+          gh release create "$TAG" *.zip checksums.txt --title "$TAG - XiaoyiWork local proxy plugin" \
+            --notes "ECPA native plugin that reuses the signed-in XiaoyiWork desktop app's local model proxy." \
+            -R "${{ github.repository }}"

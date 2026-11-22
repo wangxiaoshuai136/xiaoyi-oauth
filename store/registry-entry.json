@@ -1,0 +1,19 @@
+{
+  "id": "xiaoyiwork",
+  "name": "Xiaoyi OAuth",
+  "description": "Reuse the signed-in XiaoyiWork desktop app's local OpenAI-compatible model proxy. Windows only; the proxy key is decrypted in memory via registry + DPAPI and never written to disk.",
+  "author": "WenPaul",
+  "version": "0.1.2",
+  "license": "MIT",
+  "tags": [
+    "Provider",
+    "Executor",
+    "Local",
+    "XiaoyiWork"
+  ],
+  "locales": {
+    "zh-CN": {
+      "description": "把已登录的小艺Work 桌面端本地模型代理接入 CLIProxyAPI。Windows 专用；proxyKey 通过注册表 + DPAPI 在内存内解密，不落盘。自动补齐标准 OpenAI 流式分帧、[DONE]、工具调用合并与 usage。"
+    }
+  }
+}
