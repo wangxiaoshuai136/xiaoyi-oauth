@@ -20,7 +20,7 @@ const (
 	// PluginName is the display name used by management clients.
 	PluginName = "Xiaoyi OAuth"
 	// Version is the plugin release version.
-	Version = "0.3.3"
+	Version = "0.4.0"
 
 	authFileName = "xiaoyiwork-local.json"
 )
@@ -175,11 +175,6 @@ func (p *Plugin) handleRegister(raw []byte) (any, error) {
 			p.keys.Invalidate()
 		}
 	}
-
-	go func() {
-		time.Sleep(2 * time.Second)
-		p.ensureAuthFile()
-	}()
 
 	return rpcRegistration{
 		SchemaVersion: pluginabi.SchemaVersion,

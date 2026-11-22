@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -75,11 +76,16 @@ func (p *Plugin) authForRequest(req rpcExecutorRequest) (requestAuth, error) {
 	if xiaoyi.IsLoopbackURL(cfg.BaseURL) {
 		key := storedProxyKey(req.StorageJSON, req.AuthMetadata)
 		if key == "" {
-			resolved, _, err := p.resolveKey(false)
-			if err != nil {
-				return requestAuth{}, err
-			}
-			key = resolved
+			key = strings.TrimSpace(cfg.APIKey)
+		}
+		if key == "" {
+			key = strings.TrimSpace(os.Getenv(xiaoyi.KeyEnvPrimary))
+		}
+		if key == "" {
+			key = strings.TrimSpace(os.Getenv(xiaoyi.KeyEnvLegacy))
+		}
+		if key == "" {
+			return requestAuth{}, fmt.Errorf("本地代理模式需要 api_key，请先登录或配置")
 		}
 		return requestAuth{Auth: xiaoyi.Auth{LocalKey: key}, Local: true}, nil
 	}
@@ -89,32 +95,14 @@ func (p *Plugin) authForRequest(req rpcExecutorRequest) (requestAuth, error) {
 	credential := payload.BusinessCredential
 	refreshToken := payload.RefreshToken
 	clientID := payload.ClientID
-	if credential == "" {
-		live, err := xiaoyi.ReadBusinessCredential()
-		if err != nil {
-			return requestAuth{}, err
-		}
-		credential = live.Credential
-		if uid == "" {
-			uid = live.UID
-		}
-	}
-	if uid == "" {
-		identity, _ := xiaoyi.ReadIdentity()
-		uid = identity.UID
+	if credential == "" || uid == "" {
+		return requestAuth{}, fmt.Errorf("凭据缺少 businessCredential/uid，请重新登录")
 	}
 	if deviceID == "" {
 		deviceID, _ = xiaoyi.DeviceID(uid)
 	}
-	if refreshToken == "" || clientID == "" {
-		if session, err := xiaoyi.ReadAuthSession(); err == nil {
-			if refreshToken == "" {
-				refreshToken = session.RefreshToken
-			}
-			if clientID == "" {
-				clientID = xiaoyi.ClientID(session.IDToken)
-			}
-		}
+	if clientID == "" {
+		clientID = xiaoyi.HuaweiClientID
 	}
 	p.cloudMu.Lock()
 	if cached, ok := p.cloudCache[uid]; ok && cached.Credential != "" {

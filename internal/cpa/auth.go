@@ -1,6 +1,7 @@
 package cpa
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -89,13 +90,41 @@ func (p *Plugin) handleAuthRefresh(raw []byte) (any, error) {
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &req)
 	}
-	payload, err := importCloudCredential()
-	if err != nil || payload.BusinessCredential == "" {
-		return nil, pluginabi.NewError("xiaoyiwork_credential_unavailable", "无法读取小艺Work 云端凭证: "+errorText(err), 503)
+	var payload authFilePayload
+	if len(req.StorageJSON) > 0 {
+		_ = json.Unmarshal(req.StorageJSON, &payload)
+	}
+	if payload.BusinessCredential == "" {
+		return nil, pluginabi.NewError("xiaoyiwork_credential_unavailable", "凭据缺少 businessCredential，请重新登录", 503)
 	}
 	id := firstNonEmpty(req.AuthID, payload.UID, "local")
+	ra := requestAuth{
+		Auth: xiaoyi.Auth{
+			BusinessCredential: payload.BusinessCredential,
+			UID:                payload.UID,
+			DeviceID:           payload.DeviceID,
+		},
+		UID:            payload.UID,
+		DeviceID:       payload.DeviceID,
+		ClientID:       payload.ClientID,
+		AccessToken:    payload.AccessToken,
+		AccessTokenExp: payload.AccessTokenExp,
+		RefreshToken:   payload.RefreshToken,
+	}
+	ctx, cancel := context.WithTimeout(p.ctx, 30*time.Second)
+	defer cancel()
+	if err := p.refreshCloudAuth(ctx, &ra); err != nil {
+		return nil, pluginabi.NewError("xiaoyiwork_refresh_failed", "凭据续期失败："+err.Error(), 502)
+	}
+	payload.BusinessCredential = ra.Auth.BusinessCredential
+	payload.BusinessValidUntil = ra.BusinessValidUntil
+	payload.AccessToken = ra.AccessToken
+	payload.AccessTokenExp = ra.AccessTokenExp
+	payload.RefreshToken = ra.RefreshToken
+	payload.UpdatedAt = time.Now().Format(time.RFC3339)
+	p.persistLoginPayload(payload)
 	storage, _ := json.Marshal(payload)
-	auth := authData(id, payload.DisplayName, "keychain", storage)
+	auth := authData(id, payload.DisplayName, payload.KeySource, storage)
 	auth.NextRefreshAfter = time.Now().Add(6 * time.Hour)
 	return pluginapi.AuthRefreshResponse{Auth: auth, NextRefreshAfter: auth.NextRefreshAfter}, nil
 }

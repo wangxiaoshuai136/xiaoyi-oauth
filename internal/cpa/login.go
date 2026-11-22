@@ -22,6 +22,7 @@ type oauthSession struct {
 	done     chan struct{}
 	payload  authFilePayload
 	err      error
+	browser  *xiaoyi.LoginBrowser
 }
 
 func (p *Plugin) handleAuthLoginStart(raw []byte) (any, error) {
@@ -53,12 +54,20 @@ func (p *Plugin) handleAuthLoginStart(raw []byte) (any, error) {
 	p.lastLoginState = state
 	p.loginMu.Unlock()
 
+	authURL := xiaoyi.AuthorizeURL(state, challenge)
+	browser, err := xiaoyi.LaunchLoginBrowser(authURL)
+	if err != nil {
+		return nil, pluginabi.NewError("oauth_browser_unavailable", err.Error(), http.StatusInternalServerError)
+	}
+	session.browser = browser
+	panel := strings.TrimRight(p.Config().PanelBaseURL, "/")
+	statusURL := fmt.Sprintf("%s/v0/resource/plugins/%s/status?state=%s", panel, PluginID, state)
 	return pluginapi.AuthLoginStartResponse{
 		Provider:  PluginID,
-		URL:       xiaoyi.AuthorizeURL(state, challenge),
+		URL:       statusURL,
 		State:     state,
 		ExpiresAt: session.expires,
-		Metadata:  map[string]any{"message": "用华为账号登录，无需安装小艺Work"},
+		Metadata:  map[string]any{"message": "已由插件打开独立登录窗口；二维码/短信/密码均可使用"},
 	}, nil
 }
 
@@ -171,6 +180,10 @@ func (p *Plugin) completeSession(ctx context.Context, session *oauthSession, cod
 	default:
 		close(session.done)
 	}
+	go func() {
+		time.Sleep(2 * time.Second)
+		session.browser.Close()
+	}()
 	return nil
 }
 
@@ -182,6 +195,10 @@ func (p *Plugin) failSession(state string, err error) {
 		return
 	}
 	session.err = err
+	go func() {
+		time.Sleep(2 * time.Second)
+		session.browser.Close()
+	}()
 	select {
 	case <-session.done:
 	default:
@@ -231,6 +248,7 @@ func (p *Plugin) handleAuthLoginPoll(raw []byte) (any, error) {
 		}, nil
 	default:
 		if time.Now().After(session.expires) {
+			session.browser.Close()
 			return pluginapi.AuthLoginPollResponse{Status: pluginapi.AuthLoginStatusError, Message: "登录超时，请重试"}, nil
 		}
 		return pluginapi.AuthLoginPollResponse{Status: pluginapi.AuthLoginStatusPending, Message: "等待华为账号登录完成…"}, nil

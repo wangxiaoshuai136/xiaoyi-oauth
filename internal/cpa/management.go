@@ -74,7 +74,7 @@ code{background:#0b0e14;border:1px solid #262b36;border-radius:6px;padding:1px 5
 <h1>Xiaoyi OAuth 登录</h1>
 <p>用华为账号直接登录，<b>不需要安装或启动小艺Work 桌面端</b>。</p>
 <ol>
-<li>在 ECPA 里点击「开始登录」，浏览器会打开华为账号登录页。</li>
+<li>在 ECPA 里点击「开始登录」，插件会拉起一个独立登录窗口（不占用日常浏览器）。</li>
 <li>完成登录与授权，浏览器会跳回本机回调，插件自动换取凭据。</li>
 <li>回到 ECPA，账号会以 <code>Xiaoyi OAuth (姓名)</code> 出现，可正常启用/禁用。</li>
 </ol>
