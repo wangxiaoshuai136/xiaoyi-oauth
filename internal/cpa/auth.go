@@ -266,6 +266,40 @@ func (p *Plugin) persistCloudCredential(auth *requestAuth) {
 	}
 }
 
+// persistLoginPayload writes a fresh OAuth login to disk immediately, so the
+// account exists even when the GUI dialog closes before its next poll.
+func (p *Plugin) persistLoginPayload(payload authFilePayload) {
+	if payload.UID == "" {
+		return
+	}
+	dir := resolveOAuthDir()
+	path := filepath.Join(dir, "xiaoyiwork-"+payload.UID+".json")
+	var existing authFilePayload
+	if raw, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(raw, &existing)
+	}
+	existing.Type = PluginID
+	existing.Provider = PluginID
+	existing.OAuthProvider = PluginID
+	existing.AccountID = payload.UID
+	existing.UID = payload.UID
+	existing.DisplayName = payload.DisplayName
+	existing.BusinessCredential = payload.BusinessCredential
+	existing.BusinessValidUntil = payload.BusinessValidUntil
+	existing.AccessToken = payload.AccessToken
+	existing.AccessTokenExp = payload.AccessTokenExp
+	existing.RefreshToken = payload.RefreshToken
+	existing.ClientID = payload.ClientID
+	existing.DeviceID = payload.DeviceID
+	existing.KeySource = payload.KeySource
+	existing.UpdatedAt = payload.UpdatedAt
+	existing.Name = labelFor(existing)
+	if merged, err := json.Marshal(existing); err == nil {
+		_ = os.WriteFile(path, merged, 0o600)
+	}
+	_ = os.Remove(filepath.Join(dir, authFileName))
+}
+
 // storedProxyKey returns a local-proxy key persisted in the credential.
 func storedProxyKey(storage []byte, metadata map[string]any) string {
 	if len(storage) > 0 {

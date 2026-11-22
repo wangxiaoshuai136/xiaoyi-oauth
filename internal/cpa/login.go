@@ -160,6 +160,12 @@ func (p *Plugin) completeSession(ctx context.Context, session *oauthSession, cod
 	}
 	payload.Name = labelFor(payload)
 	session.payload = payload
+	// Persist immediately: the account must exist even if the dialog stops
+	// polling after the browser shows "登录成功".
+	p.persistLoginPayload(payload)
+	p.cloudMu.Lock()
+	p.cloudCache[payload.UID] = xiaoyi.BusinessCredential{Credential: credential, UID: payload.UID, ValidUntil: validUntil}
+	p.cloudMu.Unlock()
 	select {
 	case <-session.done:
 	default:
@@ -195,6 +201,14 @@ func (p *Plugin) handleAuthLoginPoll(raw []byte) (any, error) {
 	}
 	p.loginMu.Lock()
 	session := p.loginSessions[strings.TrimSpace(req.State)]
+	if session == nil || !sessionDone(session) {
+		for _, candidate := range p.loginSessions {
+			if candidate.err == nil && candidate.payload.UID != "" && sessionDone(candidate) {
+				session = candidate
+				break
+			}
+		}
+	}
 	if session == nil {
 		session = p.loginSessions[p.lastLoginState]
 	}
@@ -220,5 +234,17 @@ func (p *Plugin) handleAuthLoginPoll(raw []byte) (any, error) {
 			return pluginapi.AuthLoginPollResponse{Status: pluginapi.AuthLoginStatusError, Message: "登录超时，请重试"}, nil
 		}
 		return pluginapi.AuthLoginPollResponse{Status: pluginapi.AuthLoginStatusPending, Message: "等待华为账号登录完成…"}, nil
+	}
+}
+
+func sessionDone(session *oauthSession) bool {
+	if session == nil {
+		return false
+	}
+	select {
+	case <-session.done:
+		return true
+	default:
+		return false
 	}
 }
