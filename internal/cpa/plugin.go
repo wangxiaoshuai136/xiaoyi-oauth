@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -19,7 +20,7 @@ const (
 	// PluginName is the display name used by management clients.
 	PluginName = "Xiaoyi OAuth"
 	// Version is the plugin release version.
-	Version = "0.3.1"
+	Version = "0.3.2"
 
 	authFileName = "xiaoyiwork-local.json"
 )
@@ -50,17 +51,19 @@ type rpcCapabilities struct {
 
 // Plugin implements the CPA plugin capability set for the XiaoyiWork proxy.
 type Plugin struct {
-	mu         sync.RWMutex
-	ctx        context.Context
-	cancel     context.CancelFunc
-	config     PluginConfig
-	hostCall   HostCallFunc
-	keys       xiaoyi.Resolver
-	client     *xiaoyi.Client
-	cloudMu    sync.Mutex
-	cloudCache map[string]xiaoyi.BusinessCredential
-	loginMu    sync.Mutex
-	login      *oauthSession
+	mu             sync.RWMutex
+	ctx            context.Context
+	cancel         context.CancelFunc
+	config         PluginConfig
+	hostCall       HostCallFunc
+	keys           xiaoyi.Resolver
+	client         *xiaoyi.Client
+	cloudMu        sync.Mutex
+	cloudCache     map[string]xiaoyi.BusinessCredential
+	loginMu        sync.Mutex
+	loginSessions  map[string]*oauthSession
+	loginServer    *http.Server
+	lastLoginState string
 }
 
 // NewPlugin creates an uninitialised plugin instance.
@@ -68,12 +71,13 @@ func NewPlugin(hostCall HostCallFunc) *Plugin {
 	ctx, cancel := context.WithCancel(context.Background())
 	cfg := DefaultPluginConfig()
 	return &Plugin{
-		ctx:        ctx,
-		cancel:     cancel,
-		config:     cfg,
-		hostCall:   hostCall,
-		client:     xiaoyi.NewClient(cfg.BaseURL),
-		cloudCache: make(map[string]xiaoyi.BusinessCredential),
+		ctx:           ctx,
+		cancel:        cancel,
+		config:        cfg,
+		hostCall:      hostCall,
+		client:        xiaoyi.NewClient(cfg.BaseURL),
+		cloudCache:    make(map[string]xiaoyi.BusinessCredential),
+		loginSessions: make(map[string]*oauthSession),
 	}
 }
 
@@ -101,6 +105,12 @@ func (p *Plugin) HandleMethod(method string, raw []byte) (any, error) {
 	case pluginabi.MethodPluginQuiesce:
 		return map[string]any{"quiesced": true}, nil
 	case pluginabi.MethodPluginShutdown:
+		p.loginMu.Lock()
+		if p.loginServer != nil {
+			_ = p.loginServer.Close()
+			p.loginServer = nil
+		}
+		p.loginMu.Unlock()
 		p.cancel()
 		return map[string]any{"shutdown": true}, nil
 
@@ -130,6 +140,13 @@ func (p *Plugin) HandleMethod(method string, raw []byte) (any, error) {
 		return p.handleExecutorExecuteStream(raw)
 	case pluginabi.MethodExecutorCountTokens:
 		return map[string]any{"tokens": 0}, nil
+
+	case pluginabi.MethodQuotaIdentifier:
+		return p.handleQuotaIdentifier()
+	case pluginabi.MethodQuotaDescribe:
+		return p.handleQuotaDescribe()
+	case pluginabi.MethodQuotaFetch:
+		return p.handleQuotaFetch(raw)
 
 	case pluginabi.MethodManagementRegister:
 		return p.handleManagementRegister(raw)
@@ -226,7 +243,7 @@ func (p *Plugin) handleRegister(raw []byte) (any, error) {
 			ExecutorInputFormats:  []string{"chat-completions"},
 			ExecutorOutputFormats: []string{"chat-completions"},
 			ManagementAPI:         true,
-			QuotaProvider:         false,
+			QuotaProvider:         true,
 		},
 	}, nil
 }

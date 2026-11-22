@@ -27,6 +27,7 @@ const (
 
 	credentialCreateURL = "https://hag-drcn.op.dbankcloud.com/user-credential/v1/business-credential/create"
 	refreshTokenURL     = "https://hag-drcn.op.dbankcloud.com/user-credential/v1/xiaoyiwork/refresh-token"
+	privilegeQueryURL   = "https://hag-drcn.op.dbankcloud.com/ability-billing/v1/agent-purchases-client/privilege/query"
 
 	keychainRoot = `Software\ClawDesktop\keychain`
 	defaultValue = "ZGVmYXVsdA"
@@ -287,6 +288,47 @@ func CreateBusinessCredential(ctx context.Context, accessToken, uid, deviceID, c
 		return "", 0, fmt.Errorf("创建 business credential 响应缺少 credential")
 	}
 	return cred, doc.CredentialResult.ValidTime, nil
+}
+
+// QueryPrivilege returns the raw billing privilege payload (AI points etc.).
+func QueryPrivilege(ctx context.Context, credential, uid, deviceID string) ([]byte, error) {
+	body, _ := json.Marshal(map[string]any{
+		"accountType": "HW_UID",
+		"agentId":     "1",
+		"endpoint": map[string]any{
+			"device": map[string]any{
+				"brand":      "HUAWEI",
+				"deviceId":   deviceID,
+				"deviceType": "11",
+				"prdVer":     "1.0.7.7",
+			},
+			"eduMode":           "NONEDU",
+			"foregroundPkgName": "",
+			"isXiaoyiAPP":       false,
+			"language":          "zh_CN",
+			"languageMode":      "MANDARIN",
+			"locale":            "default",
+		},
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, privilegeQueryURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("businessCredential", credential)
+	req.Header.Set("x-uid", uid)
+	req.Header.Set("x-device-id", deviceID)
+	req.Header.Set("x-hag-trace-id", randomHex(16))
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("积分查询失败 HTTP %d: %s", resp.StatusCode, truncateText(string(raw), 200))
+	}
+	return raw, nil
 }
 
 func randomHex(n int) string {

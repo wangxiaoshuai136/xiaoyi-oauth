@@ -48,3 +48,7 @@ func RefreshAccessToken(context.Context, string, string, string, string) (string
 func CreateBusinessCredential(context.Context, string, string, string, string) (string, int64, error) {
 	return "", 0, fmt.Errorf("仅支持 Windows")
 }
+
+func QueryPrivilege(context.Context, string, string, string) ([]byte, error) {
+	return nil, fmt.Errorf("仅支持 Windows")
+}

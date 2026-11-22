@@ -22,7 +22,6 @@ type oauthSession struct {
 	done     chan struct{}
 	payload  authFilePayload
 	err      error
-	server   *http.Server
 }
 
 func (p *Plugin) handleAuthLoginStart(raw []byte) (any, error) {
@@ -31,104 +30,123 @@ func (p *Plugin) handleAuthLoginStart(raw []byte) (any, error) {
 	if err != nil {
 		return nil, pluginabi.NewError("oauth_pkce_failed", err.Error(), 500)
 	}
+	if err := p.ensureLoginServer(); err != nil {
+		return nil, pluginabi.NewError("oauth_callback_unavailable", err.Error(), http.StatusConflict)
+	}
 	session := &oauthSession{
 		state:    state,
 		verifier: verifier,
-		expires:  time.Now().Add(10 * time.Minute),
+		expires:  time.Now().Add(15 * time.Minute),
 		done:     make(chan struct{}),
 	}
 	p.loginMu.Lock()
-	if p.login != nil && p.login.server != nil {
-		_ = p.login.server.Close()
+	if p.loginSessions == nil {
+		p.loginSessions = make(map[string]*oauthSession)
 	}
-	p.login = session
+	now := time.Now()
+	for key, old := range p.loginSessions {
+		if now.After(old.expires) {
+			delete(p.loginSessions, key)
+		}
+	}
+	p.loginSessions[state] = session
+	p.lastLoginState = state
 	p.loginMu.Unlock()
 
-	url := xiaoyi.AuthorizeURL(state, challenge)
-	panel := strings.TrimRight(p.Config().PanelBaseURL, "/")
-	// The Huawei redirect is fixed at 127.0.0.1:17355; run our own callback
-	// server so no desktop client is needed.
-	ln, listenErr := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", xiaoyi.CallbackPort))
-	if listenErr == nil {
-		mux := http.NewServeMux()
-		mux.HandleFunc(xiaoyi.CallbackPath, func(w http.ResponseWriter, r *http.Request) {
-			p.finishOAuth(session, w, r)
-		})
-		server := &http.Server{Handler: mux}
-		session.server = server
-		go func() { _ = server.Serve(ln) }()
-		go func() {
-			<-session.done
-			time.Sleep(2 * time.Second)
-			_ = server.Close()
-		}()
-	} else if payload, importErr := importCloudCredential(); importErr == nil && payload.BusinessCredential != "" {
-		session.payload = payload
-		close(session.done)
-	} else {
-		return nil, pluginabi.NewError(
-			"oauth_callback_port_busy",
-			fmt.Sprintf("回调端口 %d 被占用，请先退出小艺Work 桌面端", xiaoyi.CallbackPort),
-			http.StatusConflict,
-		)
-	}
 	return pluginapi.AuthLoginStartResponse{
 		Provider:  PluginID,
-		URL:       url,
+		URL:       xiaoyi.AuthorizeURL(state, challenge),
 		State:     state,
 		ExpiresAt: session.expires,
-		Metadata: map[string]any{
-			"message": "用华为账号登录，无需安装小艺Work",
-			"panel":   panel,
-		},
+		Metadata:  map[string]any{"message": "用华为账号登录，无需安装小艺Work"},
 	}, nil
 }
 
-func (p *Plugin) finishOAuth(session *oauthSession, w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	if q.Get("state") != session.state {
-		http.Error(w, "state 不匹配，请重新发起登录", http.StatusBadRequest)
-		return
+func (p *Plugin) ensureLoginServer() error {
+	p.loginMu.Lock()
+	defer p.loginMu.Unlock()
+	if p.loginServer != nil {
+		return nil
 	}
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", xiaoyi.CallbackPort))
+	if err != nil {
+		return fmt.Errorf("回调端口 %d 被占用（旧插件实例或小艺Work 正在占用）；请重启一次 ECPA 内核后重试", xiaoyi.CallbackPort)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc(xiaoyi.CallbackPath, p.handleOAuthCallback)
+	server := &http.Server{Handler: mux}
+	p.loginServer = server
+	go func() { _ = server.Serve(ln) }()
+	return nil
+}
+
+func (p *Plugin) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	state := strings.TrimSpace(q.Get("state"))
+	code := strings.TrimSpace(q.Get("code"))
 	if errText := q.Get("error"); errText != "" {
-		session.fail(fmt.Errorf("华为账号登录失败: %s %s", errText, q.Get("error_description")))
+		p.failSession(state, fmt.Errorf("华为账号登录失败: %s %s", errText, q.Get("error_description")))
 		http.Error(w, "登录失败，请回到 ECPA 重试", http.StatusBadRequest)
 		return
 	}
-	code := strings.TrimSpace(q.Get("code"))
 	if code == "" {
-		session.fail(fmt.Errorf("回调缺少 code"))
 		http.Error(w, "回调缺少 code", http.StatusBadRequest)
 		return
 	}
+
+	p.loginMu.Lock()
+	session := p.loginSessions[state]
+	var candidates []*oauthSession
+	if session == nil {
+		for _, candidate := range p.loginSessions {
+			if time.Now().Before(candidate.expires) {
+				candidates = append(candidates, candidate)
+			}
+		}
+	}
+	p.loginMu.Unlock()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
+	if session != nil {
+		if err := p.completeSession(ctx, session, code); err != nil {
+			p.failSession(state, err)
+			http.Error(w, "登录失败："+err.Error(), http.StatusBadGateway)
+			return
+		}
+		writeLoginSuccess(w)
+		return
+	}
+	// The ECPA dialog may have restarted the flow; try every live verifier.
+	for _, candidate := range candidates {
+		if err := p.completeSession(ctx, candidate, code); err == nil {
+			writeLoginSuccess(w)
+			return
+		}
+	}
+	http.Error(w, "登录会话已过期（插件可能刚重启），请回到 ECPA 重新点“开始登录”", http.StatusBadRequest)
+}
+
+func (p *Plugin) completeSession(ctx context.Context, session *oauthSession, code string) error {
 	tokens, err := xiaoyi.ExchangeCode(ctx, code, session.verifier)
 	if err != nil {
-		session.fail(err)
-		http.Error(w, "换取 token 失败", http.StatusBadGateway)
-		return
+		return err
 	}
 	claims := xiaoyi.ParseIDToken(tokens.IDToken)
-	uid := claims.UID
-	if uid == "" {
-		session.fail(fmt.Errorf("id_token 缺少 uid"))
-		http.Error(w, "id_token 缺少 uid", http.StatusBadGateway)
-		return
+	if claims.UID == "" {
+		return fmt.Errorf("id_token 缺少 uid")
 	}
-	deviceID, _ := xiaoyi.DeviceID(uid)
-	credential, validUntil, err := xiaoyi.CreateBusinessCredential(ctx, tokens.AccessToken, uid, deviceID, claims.ClientID)
+	deviceID, _ := xiaoyi.DeviceID(claims.UID)
+	credential, validUntil, err := xiaoyi.CreateBusinessCredential(ctx, tokens.AccessToken, claims.UID, deviceID, claims.ClientID)
 	if err != nil {
-		session.fail(err)
-		http.Error(w, "创建云端凭据失败", http.StatusBadGateway)
-		return
+		return err
 	}
 	payload := authFilePayload{
 		Type:               PluginID,
 		Provider:           PluginID,
 		OAuthProvider:      PluginID,
-		AccountID:          uid,
-		UID:                uid,
+		AccountID:          claims.UID,
+		UID:                claims.UID,
 		DisplayName:        claims.Name,
 		BusinessCredential: credential,
 		BusinessValidUntil: validUntil,
@@ -142,23 +160,44 @@ func (p *Plugin) finishOAuth(session *oauthSession, w http.ResponseWriter, r *ht
 	}
 	payload.Name = labelFor(payload)
 	session.payload = payload
-	close(session.done)
+	select {
+	case <-session.done:
+	default:
+		close(session.done)
+	}
+	return nil
+}
+
+func (p *Plugin) failSession(state string, err error) {
+	p.loginMu.Lock()
+	session := p.loginSessions[state]
+	p.loginMu.Unlock()
+	if session == nil {
+		return
+	}
+	session.err = err
+	select {
+	case <-session.done:
+	default:
+		close(session.done)
+	}
+}
+
+func writeLoginSuccess(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8"><title>登录成功</title><body style="font:16px system-ui;background:#0f1115;color:#e8eaf0;display:grid;place-items:center;height:100vh"><div style="text-align:center"><h2>登录成功</h2><p>可以关闭这个窗口，回到 ECPA。</p></div></body>`))
 }
 
-func (s *oauthSession) fail(err error) {
-	s.err = err
-	select {
-	case <-s.done:
-	default:
-		close(s.done)
-	}
-}
-
 func (p *Plugin) handleAuthLoginPoll(raw []byte) (any, error) {
+	var req pluginapi.AuthLoginPollRequest
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &req)
+	}
 	p.loginMu.Lock()
-	session := p.login
+	session := p.loginSessions[strings.TrimSpace(req.State)]
+	if session == nil {
+		session = p.loginSessions[p.lastLoginState]
+	}
 	p.loginMu.Unlock()
 	if session == nil {
 		return pluginapi.AuthLoginPollResponse{Status: pluginapi.AuthLoginStatusPending, Message: "请点击开始登录"}, nil
