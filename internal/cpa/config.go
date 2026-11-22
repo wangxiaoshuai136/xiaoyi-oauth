@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/wangxiaoshuai136/cpa-plugin-xiaoyiwork/internal/xiaoyi"
+	"github.com/wangxiaoshuai136/xiaoyi-oauth/internal/xiaoyi"
 )
 
 // PluginConfig holds the plugin-owned settings under plugins.configs.xiaoyiwork.

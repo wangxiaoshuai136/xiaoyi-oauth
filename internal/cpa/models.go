@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/wangxiaoshuai136/cpa-plugin-xiaoyiwork/internal/pluginapi"
-	"github.com/wangxiaoshuai136/cpa-plugin-xiaoyiwork/internal/xiaoyi"
+	"github.com/wangxiaoshuai136/xiaoyi-oauth/internal/pluginapi"
+	"github.com/wangxiaoshuai136/xiaoyi-oauth/internal/xiaoyi"
 )
 
 func (p *Plugin) handleModelStatic(raw []byte) (any, error) {

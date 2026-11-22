@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/wangxiaoshuai136/cpa-plugin-xiaoyiwork/internal/pluginapi"
+	"github.com/wangxiaoshuai136/xiaoyi-oauth/internal/pluginapi"
 )
 
 func (p *Plugin) handleManagementRegister(raw []byte) (any, error) {

@@ -1,4 +1,6 @@
-# cpa-plugin-xiaoyiwork（Xiaoyi OAuth）
+<p align="center"><img src="icon.png" width="96" height="96" alt="Xiaoyi OAuth" /></p>
+
+# Xiaoyi OAuth（cpa-plugin-xiaoyiwork）
 
 把已登录的 **小艺Work 桌面端**本地模型代理接进 **EasyCLIProxyAPI / CLIProxyAPI（ECPA）**，直接消耗小艺Work 额度，无需单独申请 API Key、无需改小艺Work 本体。
 
@@ -29,7 +31,7 @@ X-Api-Key: <proxyKey>
 ## 安装
 
 1. 确认小艺Work 正在运行并已登录（代理只在 App 运行时监听 `127.0.0.1:19693`）。
-2. 把 `xiaoyiwork-v0.1.2.dll` 放到：
+2. 把 `xiaoyiwork-v0.1.3.dll` 放到：
 
 ```
 <EasyCLIProxyAPI 目录>\cpa-core\plugins\windows\amd64\
@@ -110,7 +112,7 @@ curl http://127.0.0.1:8317/v1/chat/completions \
 - `tools`：`finish_reason=tool_calls`，arguments 正确合并。
 - 裸模型名（如 `LLM_GLM5.3`）与 `/v1/responses` 均可正常使用。
 - 登录流程：`/v8/management/oauth/auth-url` 返回状态页 URL，`/oauth/status` 返回 `ok`；生成账号 `Xiaoyi OAuth (3500…0207)`（凭据含 proxy_key，状态 active）。
-- 已发布：`https://github.com/wangxiaoshuai136/cpa-plugin-xiaoyiwork`，Release `v0.1.2` 的 Windows DLL 已用 hostsim 单独验证。
+- 已发布：`https://github.com/wangxiaoshuai136/xiaoyi-oauth`，Release 的 Windows DLL 已用 hostsim 单独验证。
 
 - 仅 Windows、仅同一登录用户；换用户或做成服务会 DPAPI 解密失败。
 - 上游不支持输出上限、温度、停止词等参数；插件会主动丢弃，避免“看起来生效”。
@@ -143,7 +145,7 @@ go run .\cmd\hostsim -stream=false -dll .\bin\xiaoyiwork-v0.1.0.dll -model xiaoy
 $env:PATH = 'C:\msys64\mingw64\bin;' + $env:PATH
 $env:CGO_ENABLED = '1'
 $env:GOOS = 'windows'; $env:GOARCH = 'amd64'; $env:GOAMD64 = 'v1'
-go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o bin/xiaoyiwork-v0.1.2.dll ./cmd/xiaoyiwork-plugin
+go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o bin/xiaoyiwork-v0.1.3.dll ./cmd/xiaoyiwork-plugin
 ```
 
 必须是 `-buildmode=c-shared`（不是 Go 标准 `-buildmode=plugin`）；CI 在 Linux 上用 `x86_64-w64-mingw32-gcc` 交叉编译同一个 DLL。

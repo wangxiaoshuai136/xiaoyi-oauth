@@ -67,8 +67,8 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/wangxiaoshuai136/cpa-plugin-xiaoyiwork/internal/cpa"
-	"github.com/wangxiaoshuai136/cpa-plugin-xiaoyiwork/internal/pluginabi"
+	"github.com/wangxiaoshuai136/xiaoyi-oauth/internal/cpa"
+	"github.com/wangxiaoshuai136/xiaoyi-oauth/internal/pluginabi"
 )
 
 var (

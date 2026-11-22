@@ -3,7 +3,7 @@
   "name": "Xiaoyi OAuth",
   "description": "Reuse the signed-in XiaoyiWork desktop app's local OpenAI-compatible model proxy. Windows only; the proxy key is decrypted in memory via registry + DPAPI and never written to disk.",
   "author": "WenPaul",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "license": "MIT",
   "tags": [
     "Provider",

@@ -87,6 +87,6 @@ jobs:
           sha256sum *.zip > checksums.txt
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           gh release upload "$TAG" *.zip checksums.txt --clobber -R "${{ github.repository }}" || \
-          gh release create "$TAG" *.zip checksums.txt --title "$TAG - XiaoyiWork local proxy plugin" \
-            --notes "ECPA native plugin that reuses the signed-in XiaoyiWork desktop app's local model proxy." \
+          gh release create "$TAG" *.zip checksums.txt --title "$TAG - Xiaoyi OAuth plugin" \
+            --notes "ECPA native plugin that turns the signed-in XiaoyiWork desktop app into a login credential (Windows)." \
             -R "${{ github.repository }}"

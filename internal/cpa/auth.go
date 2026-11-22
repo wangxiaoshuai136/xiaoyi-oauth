@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/wangxiaoshuai136/cpa-plugin-xiaoyiwork/internal/pluginabi"
-	"github.com/wangxiaoshuai136/cpa-plugin-xiaoyiwork/internal/pluginapi"
-	"github.com/wangxiaoshuai136/cpa-plugin-xiaoyiwork/internal/xiaoyi"
+	"github.com/wangxiaoshuai136/xiaoyi-oauth/internal/pluginabi"
+	"github.com/wangxiaoshuai136/xiaoyi-oauth/internal/pluginapi"
+	"github.com/wangxiaoshuai136/xiaoyi-oauth/internal/xiaoyi"
 )
 
 // authFilePayload is the credential written by the login flow. Unlike the

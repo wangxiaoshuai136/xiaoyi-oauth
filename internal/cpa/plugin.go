@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wangxiaoshuai136/cpa-plugin-xiaoyiwork/internal/pluginabi"
-	"github.com/wangxiaoshuai136/cpa-plugin-xiaoyiwork/internal/pluginapi"
-	"github.com/wangxiaoshuai136/cpa-plugin-xiaoyiwork/internal/xiaoyi"
+	"github.com/wangxiaoshuai136/xiaoyi-oauth/internal/pluginabi"
+	"github.com/wangxiaoshuai136/xiaoyi-oauth/internal/pluginapi"
+	"github.com/wangxiaoshuai136/xiaoyi-oauth/internal/xiaoyi"
 )
 
 const (
@@ -19,7 +19,7 @@ const (
 	// PluginName is the display name used by management clients.
 	PluginName = "Xiaoyi OAuth"
 	// Version is the plugin release version.
-	Version = "0.1.2"
+	Version = "0.1.3"
 
 	authFileName = "xiaoyiwork-local.json"
 )
@@ -165,8 +165,8 @@ func (p *Plugin) handleRegister(raw []byte) (any, error) {
 			Name:             PluginName,
 			Version:          Version,
 			Author:           "WenPaul",
-			GitHubRepository: "https://github.com/wangxiaoshuai136/cpa-plugin-xiaoyiwork",
-			Logo:             "https://xiaoyi.huawei.com/favicon.ico",
+			GitHubRepository: "https://github.com/wangxiaoshuai136/xiaoyi-oauth",
+			Logo:             "https://raw.githubusercontent.com/wangxiaoshuai136/xiaoyi-oauth/main/icon.png",
 			ConfigFields: []pluginapi.ConfigField{
 				{
 					Name:        "base_url",

@@ -1,4 +1,4 @@
-module github.com/wangxiaoshuai136/cpa-plugin-xiaoyiwork
+module github.com/wangxiaoshuai136/xiaoyi-oauth
 
 go 1.27.0
 

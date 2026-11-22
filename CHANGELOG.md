@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.3 (2026-11-22)
+
+- 仓库更名为 `wangxiaoshuai136/xiaoyi-oauth`，Go module 与元数据仓库地址同步。
+- 新增插件图标 `icon.png`，插件在 ECPA 里的 Logo 改为仓库 raw 图标。
+
 ## v0.1.2 (2026-11-22)
 
 - 插件显示名改为 **Xiaoyi OAuth**（provider id 仍是 `xiaoyiwork`，模型前缀不变）。
