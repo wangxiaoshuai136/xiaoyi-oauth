@@ -126,6 +126,11 @@ func (p *Plugin) HandleMethod(method string, raw []byte) (any, error) {
 	case pluginabi.MethodExecutorCountTokens:
 		return map[string]any{"tokens": 0}, nil
 
+	case pluginabi.MethodManagementRegister:
+		return p.handleManagementRegister(raw)
+	case pluginabi.MethodManagementHandle:
+		return p.handleManagementHandle(raw)
+
 	default:
 		return nil, fmt.Errorf("unknown method: %s", method)
 	}
@@ -194,6 +199,12 @@ func (p *Plugin) handleRegister(raw []byte) (any, error) {
 					Description: "单个上游请求的超时秒数",
 				},
 				{
+					Name:        "panel_base_url",
+					Type:        pluginapi.ConfigFieldTypeString,
+					Default:     "http://127.0.0.1:8317",
+					Description: "登录窗口打开的面板地址",
+				},
+				{
 					Name:        "debug",
 					Type:        pluginapi.ConfigFieldTypeBoolean,
 					Default:     false,
@@ -209,7 +220,7 @@ func (p *Plugin) handleRegister(raw []byte) (any, error) {
 			ExecutorModelScope:    pluginapi.ExecutorModelScopeOAuth,
 			ExecutorInputFormats:  []string{"chat-completions"},
 			ExecutorOutputFormats: []string{"chat-completions"},
-			ManagementAPI:         false,
+			ManagementAPI:         true,
 			QuotaProvider:         false,
 		},
 	}, nil

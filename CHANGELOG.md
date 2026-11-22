@@ -3,6 +3,10 @@
 ## v0.1.2 (2026-11-22)
 
 - 插件显示名改为 **Xiaoyi OAuth**（provider id 仍是 `xiaoyiwork`，模型前缀不变）。
+- 账号从“匿名本地代理”升级为**可登录凭证**：读取 `users/*/identity.json` 的 uid，登录/注册时写入 `oauth/xiaoyiwork-<uid>.json`，包含 `proxy_key`、`key_source`，账号标签为 `Xiaoyi OAuth (uid前4…后4)`。
+- 支持 ECPA 的插件登录流程（`auth.login.start/poll/refresh`）：开始登录后打开本地状态页，几秒内自动导入；401/定时刷新时重读桌面端凭据。
+- 执行器优先使用凭据里的 proxyKey，缺失时才回退注册表 + DPAPI。
+- 新增插件管理页 `/v0/resource/plugins/xiaoyiwork/status` 与状态 API。
 - 源码仓库迁至 `wangxiaoshuai136/cpa-plugin-xiaoyiwork`，由 GitHub Actions 构建并发布 Windows DLL。
 
 ## v0.1.1 (2026-11-22)

@@ -21,7 +21,7 @@ X-Api-Key: <proxyKey>
 
 插件做四件事：
 
-1. **取密钥**：读 `HKCU\Software\ClawDesktop\keychain\model-proxy` 的 `cHJveHlLZXk`（REG_SZ，base64 的 Chromium OSCrypt v10 信封），再用 `%APPDATA%\xiaoyiwork\Local State` 里的 DPAPI 主密钥做 AES-256-GCM 解密。**全程只在内存中，不落盘**；解密结果缓存 5 分钟，401 时立刻失效重读。
+1. **取密钥并登录**：读 `HKCU\Software\ClawDesktop\keychain\model-proxy` 的 `cHJveHlLZXk`（REG_SZ，base64 的 Chromium OSCrypt v10 信封），再用 `%APPDATA%\xiaoyiwork\Local State` 里的 DPAPI 主密钥做 AES-256-GCM 解密。登录取到密钥后会把它写进该账号的 OAuth 凭据文件（与其它 OAuth 账号同等待遇）；请求优先使用凭据里的 key，401 时重读注册表。
 2. **出目录**：从 `%APPDATA%\xiaoyiwork\users\*\models.json` 读取真实模型表（取最近修改的一份），读不到时用内置回退表。
 3. **反代执行**：统一以 `stream:true` 调上游，把私有 SSE 帧重写成标准 OpenAI chunk（补 `object`/`created`/`index`/唯一 `id`），合并工具调用片段，最后补 `data: [DONE]`；非流式请求在插件内聚合为 `chat.completion`。
 4. **报错如实**：密钥缺失返回 503，上游 401/403 返回 401，限流返回 429，其余上游失败返回 502，并在消息中保留上游错误文本。
@@ -49,9 +49,17 @@ plugins:
 4. 重启 ECPA 内核，或等插件热重载。日志 `cpa-core\logs\main.log` 出现
    `pluginhost: plugin loaded plugin_id=xiaoyiwork` 即成功。
 
-插件注册后会自动在 `oauth/xiaoyiwork-local.json` 写入一条**不含密钥**的凭据记录（内核要求 provider 必须有 auth 才会路由）；proxyKey 仍然每次从注册表解密，不落盘。
+插件注册后会自动创建账号凭据 `oauth/xiaoyiwork-<uid>.json`（含 `account_id`、`uid`、`proxy_key`、`key_source`），账号名为 `Xiaoyi OAuth (uid前4…后4)`。也可以在 ECPA 里点“开始登录”，插件会打开一个本地状态页并在几秒内完成导入。
 
 也可以在 GUI 的插件页用“本地安装”选择 DLL，再到插件配置里把 `enabled` 打开；配置项会按下面的字段渲染成表单。
+
+## 账号与登录
+
+- **自动导入**：插件注册后读取 `%APPDATA%\xiaoyiwork\users\*\identity.json` 的 `uid`，生成凭据 `oauth/xiaoyiwork-<uid>.json`，并把当前 proxyKey 写进去。
+- **手动登录**：在 ECPA 的凭据页点“开始登录”，插件返回本地状态页 URL；只要小艺Work 已登录，3 秒内轮询就会成功并保存账号。
+- **账号标签**：`Xiaoyi OAuth (3500…0207)`，可正常启用、禁用、设置排除模型。
+- **刷新**：`auth.refresh` 会重读注册表 + DPAPI，返回新的 `proxy_key`；请求遇到 401 时会自动失效重读并重试一次。
+- **状态页**：`/v0/resource/plugins/xiaoyiwork/status`；状态 API：`/v0/management/xiaoyiwork/api/state`。
 
 ## 配置
 

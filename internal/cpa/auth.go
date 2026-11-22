@@ -3,13 +3,33 @@ package cpa
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/wangxiaoshuai136/cpa-plugin-xiaoyiwork/internal/pluginabi"
 	"github.com/wangxiaoshuai136/cpa-plugin-xiaoyiwork/internal/pluginapi"
+	"github.com/wangxiaoshuai136/cpa-plugin-xiaoyiwork/internal/xiaoyi"
 )
+
+// authFilePayload is the credential written by the login flow. Unlike the
+// first release, it carries the proxy key so the account is a real credential
+// the gateway can route with, exactly like an OAuth account.
+type authFilePayload struct {
+	Type           string   `json:"type"`
+	Provider       string   `json:"provider"`
+	OAuthProvider  string   `json:"oauth_provider,omitempty"`
+	AccountID      string   `json:"account_id,omitempty"`
+	Name           string   `json:"name,omitempty"`
+	UID            string   `json:"uid,omitempty"`
+	ProxyKey       string   `json:"proxy_key,omitempty"`
+	KeySource      string   `json:"key_source,omitempty"`
+	UpdatedAt      string   `json:"updated_at,omitempty"`
+	Disabled       bool     `json:"disabled,omitempty"`
+	ExcludedModels []string `json:"excluded_models,omitempty"`
+}
 
 type rpcIdentifierResponse struct {
 	Identifier          string                        `json:"identifier"`
@@ -37,9 +57,20 @@ func (p *Plugin) handleAuthParse(raw []byte) (any, error) {
 	if !looksLikeXiaoyiAuth(req) {
 		return pluginapi.AuthParseResponse{Handled: false}, nil
 	}
+	var payload authFilePayload
+	if len(req.RawJSON) > 0 {
+		_ = json.Unmarshal(req.RawJSON, &payload)
+	}
+	id := payload.UID
+	if id == "" {
+		id = payload.AccountID
+	}
+	if id == "" {
+		id = "local"
+	}
 	return pluginapi.AuthParseResponse{
 		Handled: true,
-		Auth:    p.authData("local", "registry"),
+		Auth:    authData(id, payload.UID, payload.KeySource, req.RawJSON),
 	}, nil
 }
 
@@ -54,21 +85,31 @@ func looksLikeXiaoyiAuth(req pluginapi.AuthParseRequest) bool {
 }
 
 func (p *Plugin) handleAuthLoginStart(raw []byte) (any, error) {
-	key, source, err := p.resolveKey(true)
-	message := "已从小艺Work 本地凭据读取 proxyKey（" + source + "）"
-	if err != nil || key == "" {
-		message = "等待小艺Work 登录：" + errorText(err)
+	state := uuid.NewString()
+	key, source, _ := p.resolveKey(true)
+	uid := identityUID()
+	panel := strings.TrimRight(p.Config().PanelBaseURL, "/")
+	url := fmt.Sprintf("%s/v0/resource/plugins/%s/status?state=%s", panel, PluginID, state)
+	message := "正在导入小艺Work 桌面端登录态"
+	if key == "" {
+		message = "请先启动并登录小艺Work 桌面端，再点击重试"
 	}
 	return pluginapi.AuthLoginStartResponse{
 		Provider:  PluginID,
-		State:     uuid.NewString(),
+		URL:       url,
+		State:     state,
 		ExpiresAt: time.Now().Add(15 * time.Minute),
-		Metadata:  map[string]any{"message": message},
+		Metadata: map[string]any{
+			"message":    message,
+			"uid":        uid,
+			"key_source": source,
+		},
 	}, nil
 }
 
 func (p *Plugin) handleAuthLoginPoll(raw []byte) (any, error) {
 	key, source, err := p.resolveKey(true)
+	uid := identityUID()
 	if err != nil || key == "" {
 		message := "请先启动并登录小艺Work 桌面端"
 		if err != nil {
@@ -76,10 +117,13 @@ func (p *Plugin) handleAuthLoginPoll(raw []byte) (any, error) {
 		}
 		return pluginapi.AuthLoginPollResponse{Status: pluginapi.AuthLoginStatusPending, Message: message}, nil
 	}
+	storage := credentialJSON(uid, key, source)
+	auth := authData(accountID(uid), uid, source, storage)
+	auth.NextRefreshAfter = time.Now().Add(time.Hour)
 	return pluginapi.AuthLoginPollResponse{
 		Status:  pluginapi.AuthLoginStatusSuccess,
-		Message: "已接入小艺Work 本地模型代理（凭据来源：" + source + "）",
-		Auth:    p.authData("local", source),
+		Message: "已导入小艺Work 登录凭证（" + labelFor(uid) + "）",
+		Auth:    auth,
 	}, nil
 }
 
@@ -92,79 +136,152 @@ func (p *Plugin) handleAuthRefresh(raw []byte) (any, error) {
 	if err != nil || key == "" {
 		return nil, pluginabi.NewError("xiaoyiwork_key_unavailable", "无法读取小艺Work proxyKey: "+errorText(err), 503)
 	}
+	uid := identityUID()
 	id := strings.TrimSpace(req.AuthID)
 	if id == "" {
-		id = "local"
+		id = accountID(uid)
 	}
-	return pluginapi.AuthRefreshResponse{
-		Auth:             p.authData(id, source),
-		NextRefreshAfter: time.Now().Add(time.Hour),
-	}, nil
+	storage := credentialJSON(uid, key, source)
+	auth := authData(id, uid, source, storage)
+	auth.NextRefreshAfter = time.Now().Add(time.Hour)
+	return pluginapi.AuthRefreshResponse{Auth: auth, NextRefreshAfter: auth.NextRefreshAfter}, nil
 }
 
-func (p *Plugin) authData(id, source string) pluginapi.AuthData {
+func authData(id, uid, source string, storage []byte) pluginapi.AuthData {
+	if id == "" {
+		id = accountID(uid)
+	}
+	if source == "" {
+		source = "registry"
+	}
 	return pluginapi.AuthData{
-		Provider: PluginID,
-		ID:       id,
-		Label:    PluginName,
+		Provider:    PluginID,
+		ID:          id,
+		Label:       labelFor(uid),
+		StorageJSON: storage,
 		Metadata: map[string]any{
 			"account_id":     id,
+			"uid":            uid,
 			"provider":       PluginID,
 			"oauth_provider": PluginID,
-			"auth_kind":      "local-proxy",
+			"auth_kind":      "desktop",
 			"key_source":     source,
 		},
 		Attributes: map[string]string{"oauth_provider": PluginID},
 	}
 }
 
-// ensureAuthFile creates one keyless credential. The proxy key never touches
-// disk: it is resolved from the registry on demand.
-func (p *Plugin) ensureAuthFile() {
-	if p.hasOwnAuth() {
-		return
+func credentialJSON(uid, key, source string) []byte {
+	payload := authFilePayload{
+		Type:          PluginID,
+		Provider:      PluginID,
+		OAuthProvider: PluginID,
+		AccountID:     accountID(uid),
+		Name:          labelFor(uid),
+		UID:           uid,
+		ProxyKey:      key,
+		KeySource:     source,
+		UpdatedAt:     time.Now().Format(time.RFC3339),
 	}
-	payload := map[string]any{
-		"type":       PluginID,
-		"provider":   PluginID,
-		"name":       PluginName,
-		"created_by": "cpa-plugin-" + PluginID,
+	raw, _ := json.Marshal(payload)
+	return raw
+}
+
+func accountID(uid string) string {
+	uid = strings.TrimSpace(uid)
+	if uid == "" {
+		return "local"
 	}
-	raw, err := json.Marshal(payload)
+	return uid
+}
+
+func labelFor(uid string) string {
+	if strings.TrimSpace(uid) == "" {
+		return PluginName + " (local)"
+	}
+	return PluginName + " (" + xiaoyi.ShortUID(uid) + ")"
+}
+
+func identityUID() string {
+	identity, err := xiaoyi.ReadIdentity()
 	if err != nil {
+		return ""
+	}
+	return identity.UID
+}
+
+// ensureAuthFile keeps one credential per desktop account. It prefers writing
+// the oauth file directly so a keyless record from 0.1.x is upgraded in place
+// without losing the user's disabled/excluded-model settings.
+func (p *Plugin) ensureAuthFile() {
+	key, source, _ := p.resolveKey(false)
+	uid := identityUID()
+	dir := resolveOAuthDir()
+	pattern := filepath.Join(dir, authFileName)
+	if existing := strings.TrimSpace(uid); existing != "" {
+		pattern = filepath.Join(dir, "xiaoyiwork-"+existing+".json")
+	}
+	if raw, err := os.ReadFile(pattern); err == nil {
+		var payload authFilePayload
+		_ = json.Unmarshal(raw, &payload)
+		if key != "" {
+			payload.ProxyKey = key
+			payload.KeySource = source
+		}
+		if payload.UID == "" {
+			payload.UID = uid
+		}
+		payload.Type = PluginID
+		payload.Provider = PluginID
+		payload.OAuthProvider = PluginID
+		payload.UpdatedAt = time.Now().Format(time.RFC3339)
+		if merged, err := json.Marshal(payload); err == nil {
+			_ = os.WriteFile(pattern, merged, 0o600)
+		}
 		return
+	}
+
+	name := authFileName
+	if uid != "" {
+		name = "xiaoyiwork-" + uid + ".json"
 	}
 	if _, err := p.callHost(pluginabi.MethodHostAuthSave, pluginapi.HostAuthSaveRequest{
-		Name: authFileName,
-		JSON: raw,
+		Name: name,
+		JSON: credentialJSON(uid, key, source),
 	}); err != nil {
 		if p.Config().Debug {
 			p.log("warn", "写入小艺Work 凭据失败："+err.Error(), nil)
 		}
 		return
 	}
-	p.log("info", "已创建小艺Work 本地代理凭据（不含密钥）", nil)
+	p.log("info", "已写入小艺Work 登录凭证（"+labelFor(uid)+"）", nil)
 }
 
-func (p *Plugin) hasOwnAuth() bool {
-	raw, err := p.callHost(pluginabi.MethodHostAuthList, map[string]any{})
-	if err != nil {
-		return false
-	}
-	var env struct {
-		Result struct {
-			Files []pluginapi.HostAuthFileEntry `json:"files"`
-		} `json:"result"`
-	}
-	if err := json.Unmarshal(raw, &env); err != nil {
-		return false
-	}
-	for _, f := range env.Result.Files {
-		if strings.EqualFold(f.Provider, PluginID) || strings.EqualFold(f.Type, PluginID) {
-			return true
+func resolveOAuthDir() string {
+	for _, candidate := range []string{`../oauth`, `../../oauth`, `oauth`} {
+		if stat, err := os.Stat(candidate); err == nil && stat.IsDir() {
+			return candidate
 		}
 	}
-	return false
+	return `../oauth`
+}
+
+// storedProxyKey returns a key persisted in the credential, if any.
+func storedProxyKey(storage []byte, metadata map[string]any) string {
+	if len(storage) > 0 {
+		var payload authFilePayload
+		if err := json.Unmarshal(storage, &payload); err == nil {
+			if key := strings.TrimSpace(payload.ProxyKey); key != "" {
+				return key
+			}
+		}
+	}
+	if metadata != nil {
+		if key, ok := metadata["proxy_key"].(string); ok && strings.TrimSpace(key) != "" {
+			return strings.TrimSpace(key)
+		}
+	}
+	return ""
 }
 
 func errorText(err error) string {

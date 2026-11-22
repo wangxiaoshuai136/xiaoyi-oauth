@@ -51,12 +51,21 @@ func (p *Plugin) handleExecutorIdentifier() (any, error) {
 	return map[string]any{"identifier": PluginID}, nil
 }
 
+// requestKey prefers the credential the gateway selected and falls back to the
+// live desktop app credential (registry + DPAPI) when the file has none.
+func (p *Plugin) requestKey(req rpcExecutorRequest) (string, string, error) {
+	if key := storedProxyKey(req.StorageJSON, req.AuthMetadata); key != "" {
+		return key, "credential", nil
+	}
+	return p.resolveKey(false)
+}
+
 func (p *Plugin) handleExecutorExecute(raw []byte) (any, error) {
 	var req rpcExecutorRequest
 	if err := json.Unmarshal(raw, &req); err != nil {
 		return nil, fmt.Errorf("decode executor.execute request: %w", err)
 	}
-	key, _, err := p.resolveKey(false)
+	key, _, err := p.requestKey(req)
 	if err != nil {
 		return nil, keyError(err)
 	}
@@ -108,7 +117,7 @@ func (p *Plugin) handleExecutorExecuteStream(raw []byte) (any, error) {
 	if err := json.Unmarshal(raw, &req); err != nil {
 		return nil, fmt.Errorf("decode executor.execute_stream request: %w", err)
 	}
-	key, _, err := p.resolveKey(false)
+	key, _, err := p.requestKey(req)
 	if err != nil {
 		return nil, keyError(err)
 	}
