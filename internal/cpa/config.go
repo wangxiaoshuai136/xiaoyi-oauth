@@ -28,7 +28,7 @@ type PluginConfig struct {
 // DefaultPluginConfig returns the documented defaults.
 func DefaultPluginConfig() PluginConfig {
 	return PluginConfig{
-		BaseURL:               xiaoyi.DefaultBaseURL,
+		BaseURL:               xiaoyi.CloudBaseURL,
 		ModelPrefix:           "xiaoyiwork/",
 		RouteUnprefixedModels: true,
 		RequestTimeoutSeconds: 600,

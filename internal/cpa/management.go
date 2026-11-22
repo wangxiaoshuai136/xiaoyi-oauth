@@ -29,13 +29,14 @@ func (p *Plugin) handleManagementHandle(raw []byte) (any, error) {
 		path = path[:idx]
 	}
 	if strings.Contains(path, "/api/state") {
-		key, source, err := p.resolveKey(true)
+		payload, err := importCloudCredential()
 		state := map[string]any{
-			"key_available": key != "",
-			"key_source":    source,
-			"uid":           identityUID(),
-			"label":         labelFor(identityUID()),
-			"error":         errorText(err),
+			"credential_ready": payload.BusinessCredential != "",
+			"mode":             "cloud",
+			"uid":              payload.UID,
+			"label":            labelFor(payload),
+			"expires_at":       payload.BusinessValidUntil,
+			"error":            errorText(err),
 		}
 		body, _ := json.Marshal(state)
 		return pluginapi.ManagementResponse{

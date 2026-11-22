@@ -92,6 +92,11 @@ func (p *Plugin) catalogModels(rules []string) []pluginapi.ModelInfo {
 			SupportedGenerationMethods: []string{"chat.completions"},
 			SupportedInputModalities:   []string{"text"},
 			SupportedOutputModalities:  []string{"text"},
+			Thinking: &pluginapi.ThinkingSupport{
+				ZeroAllowed:    true,
+				DynamicAllowed: true,
+				Levels:         []string{"low", "medium", "high"},
+			},
 		})
 	}
 	return out

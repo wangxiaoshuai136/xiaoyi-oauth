@@ -2,12 +2,14 @@ package cpa
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/wangxiaoshuai136/xiaoyi-oauth/internal/pluginabi"
@@ -43,7 +45,6 @@ var unsupportedParams = []string{
 	"seed",
 	"user",
 	"stream_options",
-	"reasoning_effort",
 	"thinking",
 }
 
@@ -51,13 +52,158 @@ func (p *Plugin) handleExecutorIdentifier() (any, error) {
 	return map[string]any{"identifier": PluginID}, nil
 }
 
-// requestKey prefers the credential the gateway selected and falls back to the
-// live desktop app credential (registry + DPAPI) when the file has none.
-func (p *Plugin) requestKey(req rpcExecutorRequest) (string, string, error) {
-	if key := storedProxyKey(req.StorageJSON, req.AuthMetadata); key != "" {
-		return key, "credential", nil
+// requestAuth is everything one upstream request needs, plus what a refresh
+// would need if the cloud credential expires.
+type requestAuth struct {
+	Auth           xiaoyi.Auth
+	Local          bool
+	UID            string
+	DeviceID       string
+	ClientID       string
+	AccessToken    string
+	AccessTokenExp int64
+	RefreshToken   string
+}
+
+func (p *Plugin) authForRequest(req rpcExecutorRequest) (requestAuth, error) {
+	cfg := p.Config()
+	var payload authFilePayload
+	if len(req.StorageJSON) > 0 {
+		_ = json.Unmarshal(req.StorageJSON, &payload)
 	}
-	return p.resolveKey(false)
+	if xiaoyi.IsLoopbackURL(cfg.BaseURL) {
+		key := storedProxyKey(req.StorageJSON, req.AuthMetadata)
+		if key == "" {
+			resolved, _, err := p.resolveKey(false)
+			if err != nil {
+				return requestAuth{}, err
+			}
+			key = resolved
+		}
+		return requestAuth{Auth: xiaoyi.Auth{LocalKey: key}, Local: true}, nil
+	}
+
+	uid := firstNonEmpty(payload.UID, payload.AccountID)
+	deviceID := payload.DeviceID
+	credential := payload.BusinessCredential
+	refreshToken := payload.RefreshToken
+	clientID := payload.ClientID
+	if credential == "" {
+		live, err := xiaoyi.ReadBusinessCredential()
+		if err != nil {
+			return requestAuth{}, err
+		}
+		credential = live.Credential
+		if uid == "" {
+			uid = live.UID
+		}
+	}
+	if uid == "" {
+		identity, _ := xiaoyi.ReadIdentity()
+		uid = identity.UID
+	}
+	if deviceID == "" {
+		deviceID, _ = xiaoyi.DeviceID(uid)
+	}
+	if refreshToken == "" || clientID == "" {
+		if session, err := xiaoyi.ReadAuthSession(); err == nil {
+			if refreshToken == "" {
+				refreshToken = session.RefreshToken
+			}
+			if clientID == "" {
+				clientID = xiaoyi.ClientID(session.IDToken)
+			}
+		}
+	}
+	p.cloudMu.Lock()
+	if cached, ok := p.cloudCache[uid]; ok && cached.Credential != "" {
+		credential = cached.Credential
+	}
+	p.cloudMu.Unlock()
+	if credential == "" {
+		return requestAuth{}, fmt.Errorf("没有可用的 businessCredential")
+	}
+	return requestAuth{
+		Auth: xiaoyi.Auth{
+			BusinessCredential: credential,
+			UID:                uid,
+			DeviceID:           deviceID,
+		},
+		UID:            uid,
+		DeviceID:       deviceID,
+		ClientID:       clientID,
+		AccessToken:    payload.AccessToken,
+		AccessTokenExp: payload.AccessTokenExp,
+		RefreshToken:   refreshToken,
+	}, nil
+}
+
+// refreshCloudAuth renews the UAT (when needed) and issues a new business
+// credential, so the plugin keeps working without the desktop app running.
+func (p *Plugin) refreshCloudAuth(ctx context.Context, auth *requestAuth) error {
+	access := auth.AccessToken
+	if access == "" || (auth.AccessTokenExp > 0 && time.Now().UnixMilli() >= auth.AccessTokenExp) {
+		if auth.RefreshToken == "" {
+			return fmt.Errorf("refresh token 为空，需要重新登录小艺Work")
+		}
+		fresh, err := xiaoyi.RefreshAccessToken(ctx, auth.Auth.BusinessCredential, auth.UID, auth.DeviceID, auth.RefreshToken)
+		if err != nil {
+			return err
+		}
+		access = fresh
+		auth.AccessToken = fresh
+	}
+	credential, validUntil, err := xiaoyi.CreateBusinessCredential(ctx, access, auth.UID, auth.DeviceID, auth.ClientID)
+	if err != nil {
+		return err
+	}
+	auth.Auth.BusinessCredential = credential
+	p.cloudMu.Lock()
+	p.cloudCache[auth.UID] = xiaoyi.BusinessCredential{Credential: credential, UID: auth.UID, ValidUntil: validUntil}
+	p.cloudMu.Unlock()
+	return nil
+}
+
+func (p *Plugin) doChat(ctx context.Context, auth *requestAuth, payload []byte) ([]byte, error) {
+	body, _, err := p.client.Chat(ctx, auth.Auth, payload)
+	if err == nil || !xiaoyi.IsUnauthorized(err) {
+		return body, err
+	}
+	if auth.Local {
+		p.keys.Invalidate()
+		if fresh, _, freshErr := p.resolveKey(true); freshErr == nil {
+			auth.Auth.LocalKey = fresh
+			body, _, err = p.client.Chat(ctx, auth.Auth, payload)
+			return body, err
+		}
+		return nil, err
+	}
+	if refreshErr := p.refreshCloudAuth(ctx, auth); refreshErr != nil {
+		return nil, err
+	}
+	body, _, err = p.client.Chat(ctx, auth.Auth, payload)
+	return body, err
+}
+
+func (p *Plugin) doChatStream(ctx context.Context, auth *requestAuth, payload []byte) (io.ReadCloser, error) {
+	body, _, err := p.client.ChatStream(ctx, auth.Auth, payload)
+	if err == nil || !xiaoyi.IsUnauthorized(err) {
+		return body, err
+	}
+	if auth.Local {
+		p.keys.Invalidate()
+		if fresh, _, freshErr := p.resolveKey(true); freshErr == nil {
+			auth.Auth.LocalKey = fresh
+			body, _, err = p.client.ChatStream(ctx, auth.Auth, payload)
+			return body, err
+		}
+		return nil, err
+	}
+	if refreshErr := p.refreshCloudAuth(ctx, auth); refreshErr != nil {
+		return nil, err
+	}
+	body, _, err = p.client.ChatStream(ctx, auth.Auth, payload)
+	return body, err
 }
 
 func (p *Plugin) handleExecutorExecute(raw []byte) (any, error) {
@@ -65,7 +211,7 @@ func (p *Plugin) handleExecutorExecute(raw []byte) (any, error) {
 	if err := json.Unmarshal(raw, &req); err != nil {
 		return nil, fmt.Errorf("decode executor.execute request: %w", err)
 	}
-	key, _, err := p.requestKey(req)
+	auth, err := p.authForRequest(req)
 	if err != nil {
 		return nil, keyError(err)
 	}
@@ -76,19 +222,8 @@ func (p *Plugin) handleExecutorExecute(raw []byte) (any, error) {
 
 	ctx, cancel := p.requestContext()
 	defer cancel()
-	body, _, err := p.client.Chat(ctx, key, payload)
-	if err != nil && xiaoyi.IsUnauthorized(err) {
-		// The desktop app may have rotated its key; re-read once and retry.
-		p.keys.Invalidate()
-		if fresh, _, freshErr := p.resolveKey(true); freshErr == nil {
-			key = fresh
-			body, _, err = p.client.Chat(ctx, key, payload)
-		}
-	}
+	body, err := p.doChat(ctx, &auth, payload)
 	if err != nil {
-		if xiaoyi.IsUnauthorized(err) {
-			p.keys.Invalidate()
-		}
 		return nil, upstreamError(err)
 	}
 
@@ -117,7 +252,7 @@ func (p *Plugin) handleExecutorExecuteStream(raw []byte) (any, error) {
 	if err := json.Unmarshal(raw, &req); err != nil {
 		return nil, fmt.Errorf("decode executor.execute_stream request: %w", err)
 	}
-	key, _, err := p.requestKey(req)
+	auth, err := p.authForRequest(req)
 	if err != nil {
 		return nil, keyError(err)
 	}
@@ -127,19 +262,9 @@ func (p *Plugin) handleExecutorExecuteStream(raw []byte) (any, error) {
 	}
 
 	ctx, cancel := p.requestContext()
-	body, _, err := p.client.ChatStream(ctx, key, payload)
-	if err != nil && xiaoyi.IsUnauthorized(err) {
-		p.keys.Invalidate()
-		if fresh, _, freshErr := p.resolveKey(true); freshErr == nil {
-			key = fresh
-			body, _, err = p.client.ChatStream(ctx, key, payload)
-		}
-	}
+	body, err := p.doChatStream(ctx, &auth, payload)
 	if err != nil {
 		cancel()
-		if xiaoyi.IsUnauthorized(err) {
-			p.keys.Invalidate()
-		}
 		return nil, upstreamError(err)
 	}
 
@@ -274,7 +399,7 @@ func looksLikeSSE(body []byte) bool {
 func keyError(err error) *pluginabi.Error {
 	return pluginabi.NewError(
 		"xiaoyiwork_key_unavailable",
-		"无法读取小艺Work proxyKey，请确认小艺Work 桌面端正在运行且已登录："+err.Error(),
+		"无法读取小艺Work 登录凭据，请先在插件里重新导入账号："+err.Error(),
 		http.StatusServiceUnavailable,
 	)
 }

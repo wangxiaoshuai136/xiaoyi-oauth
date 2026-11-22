@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.2.2 (2026-11-22)
+
+- 所有模型声明 `low / medium / high` 思考档位（可关闭），并把 `reasoning_effort` 透传给云端；修复「思考强度不能选」。
+
+## v0.2.1 (2026-11-22)
+
+- 云端非流式请求不再发送 `Accept: application/json`（上游只接受 SSE，会返回 406）。
+
+## v0.2.0 (2026-11-22)
+
+- **不再依赖桌面端运行**：默认直连 `https://hag-drcn.op.dbankcloud.com/celia/v1/sse-api`，使用 `businessCredential` + `x-uid` + `x-device-id` + `x-businessId` 鉴权。
+- 登录凭据包含 businessCredential、access/refresh token、clientId、deviceId；401 或到期时通过 refresh-token 网关与 business-credential/create 自动续期。
+- `base_url` 设为 `127.0.0.1:19693` 时仍可回退本地代理模式。
+
 ## v0.1.3 (2026-11-22)
 
 - 仓库更名为 `wangxiaoshuai136/xiaoyi-oauth`，Go module 与元数据仓库地址同步。

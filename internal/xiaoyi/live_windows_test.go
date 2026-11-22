@@ -29,7 +29,7 @@ func TestLiveProxyKeyAndChat(t *testing.T) {
 	client := NewClient(DefaultBaseURL)
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	body, headers, err := client.ChatStream(ctx, key, []byte(`{"model":"GLM_5.3_FLASH_VE","messages":[{"role":"user","content":"Say OK"}],"stream":true}`))
+	body, headers, err := client.ChatStream(ctx, Auth{LocalKey: key}, []byte(`{"model":"GLM_5.3_FLASH_VE","messages":[{"role":"user","content":"Say OK"}],"stream":true}`))
 	if err != nil {
 		t.Fatalf("ChatStream: %v", err)
 	}

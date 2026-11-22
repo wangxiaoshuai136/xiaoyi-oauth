@@ -43,6 +43,15 @@ type Client struct {
 	http    *http.Client
 }
 
+// Auth is what one upstream request needs: a local proxy key or the cloud
+// business credential bundle.
+type Auth struct {
+	LocalKey           string
+	BusinessCredential string
+	UID                string
+	DeviceID           string
+}
+
 // NewClient builds a client that never uses the system proxy: the upstream is
 // loopback and honouring HTTP_PROXY would break it.
 func NewClient(baseURL string) *Client {
@@ -65,8 +74,8 @@ func NewClient(baseURL string) *Client {
 func (c *Client) BaseURL() string { return c.baseURL }
 
 // ChatStream opens a streaming chat completion. The caller must close the body.
-func (c *Client) ChatStream(ctx context.Context, key string, payload []byte) (io.ReadCloser, http.Header, error) {
-	req, err := c.newRequest(ctx, key, payload)
+func (c *Client) ChatStream(ctx context.Context, auth Auth, payload []byte) (io.ReadCloser, http.Header, error) {
+	req, err := c.newRequest(ctx, auth, payload)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -84,12 +93,11 @@ func (c *Client) ChatStream(ctx context.Context, key string, payload []byte) (io
 }
 
 // Chat performs a non-streaming chat completion.
-func (c *Client) Chat(ctx context.Context, key string, payload []byte) ([]byte, http.Header, error) {
-	req, err := c.newRequest(ctx, key, payload)
+func (c *Client) Chat(ctx context.Context, auth Auth, payload []byte) ([]byte, http.Header, error) {
+	req, err := c.newRequest(ctx, auth, payload)
 	if err != nil {
 		return nil, nil, err
 	}
-	req.Header.Set("Accept", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, nil, fmt.Errorf("连接小艺Work 本地代理失败（请确认小艺Work 正在运行）: %w", err)
@@ -125,18 +133,39 @@ func (c *Client) Probe(ctx context.Context, key string) error {
 	return conn.Close()
 }
 
-func (c *Client) newRequest(ctx context.Context, key string, payload []byte) (*http.Request, error) {
+func (c *Client) newRequest(ctx context.Context, auth Auth, payload []byte) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "cpa-plugin-xiaoyiwork/0.1.0")
-	if strings.TrimSpace(key) != "" {
-		key = strings.TrimSpace(key)
-		// XiaoyiWork accepts X-Api-Key and only the exact "Bearer" spelling.
-		req.Header.Set("X-Api-Key", key)
-		req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Accept-Encoding", "identity")
+	if isLoopback(c.baseURL) {
+		if key := strings.TrimSpace(auth.LocalKey); key != "" {
+			// XiaoyiWork accepts X-Api-Key and only the exact "Bearer" spelling.
+			req.Header.Set("X-Api-Key", key)
+			req.Header.Set("Authorization", "Bearer "+key)
+		}
+		return req, nil
 	}
+	req.Header.Set("businessCredential", strings.TrimSpace(auth.BusinessCredential))
+	req.Header.Set("x-uid", strings.TrimSpace(auth.UID))
+	req.Header.Set("x-device-id", strings.TrimSpace(auth.DeviceID))
+	req.Header.Set("x-businessId", BusinessID)
+	req.Header.Set("x-request-from", "xiaoyiWork")
 	return req, nil
 }
+
+func isLoopback(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	return host == "127.0.0.1" || host == "localhost" || host == "::1"
+}
+
+// IsLoopbackURL reports whether raw points at a local proxy.
+func IsLoopbackURL(raw string) bool { return isLoopback(raw) }

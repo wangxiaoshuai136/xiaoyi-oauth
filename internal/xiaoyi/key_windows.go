@@ -182,12 +182,16 @@ func dpapiUnprotect(blob []byte) ([]byte, error) {
 }
 
 func readRegistryString(path, value string) (string, error) {
+	return readRegistryStringRoot(syscall.HKEY_CURRENT_USER, path, value)
+}
+
+func readRegistryStringRoot(root syscall.Handle, path, value string) (string, error) {
 	pathPtr, err := syscall.UTF16PtrFromString(path)
 	if err != nil {
 		return "", err
 	}
 	var key syscall.Handle
-	if err := syscall.RegOpenKeyEx(syscall.HKEY_CURRENT_USER, pathPtr, 0, syscall.KEY_READ, &key); err != nil {
+	if err := syscall.RegOpenKeyEx(root, pathPtr, 0, syscall.KEY_READ, &key); err != nil {
 		return "", fmt.Errorf("打开注册表键失败: %w", err)
 	}
 	defer syscall.RegCloseKey(key)

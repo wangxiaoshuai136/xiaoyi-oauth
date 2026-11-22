@@ -19,7 +19,7 @@ const (
 	// PluginName is the display name used by management clients.
 	PluginName = "Xiaoyi OAuth"
 	// Version is the plugin release version.
-	Version = "0.1.3"
+	Version = "0.2.2"
 
 	authFileName = "xiaoyiwork-local.json"
 )
@@ -50,13 +50,15 @@ type rpcCapabilities struct {
 
 // Plugin implements the CPA plugin capability set for the XiaoyiWork proxy.
 type Plugin struct {
-	mu       sync.RWMutex
-	ctx      context.Context
-	cancel   context.CancelFunc
-	config   PluginConfig
-	hostCall HostCallFunc
-	keys     xiaoyi.Resolver
-	client   *xiaoyi.Client
+	mu         sync.RWMutex
+	ctx        context.Context
+	cancel     context.CancelFunc
+	config     PluginConfig
+	hostCall   HostCallFunc
+	keys       xiaoyi.Resolver
+	client     *xiaoyi.Client
+	cloudMu    sync.Mutex
+	cloudCache map[string]xiaoyi.BusinessCredential
 }
 
 // NewPlugin creates an uninitialised plugin instance.
@@ -64,11 +66,12 @@ func NewPlugin(hostCall HostCallFunc) *Plugin {
 	ctx, cancel := context.WithCancel(context.Background())
 	cfg := DefaultPluginConfig()
 	return &Plugin{
-		ctx:      ctx,
-		cancel:   cancel,
-		config:   cfg,
-		hostCall: hostCall,
-		client:   xiaoyi.NewClient(cfg.BaseURL),
+		ctx:        ctx,
+		cancel:     cancel,
+		config:     cfg,
+		hostCall:   hostCall,
+		client:     xiaoyi.NewClient(cfg.BaseURL),
+		cloudCache: make(map[string]xiaoyi.BusinessCredential),
 	}
 }
 
@@ -171,8 +174,8 @@ func (p *Plugin) handleRegister(raw []byte) (any, error) {
 				{
 					Name:        "base_url",
 					Type:        pluginapi.ConfigFieldTypeString,
-					Default:     xiaoyi.DefaultBaseURL,
-					Description: "小艺Work 桌面端本地 OpenAI 兼容代理地址（默认 127.0.0.1:19693）",
+					Default:     xiaoyi.CloudBaseURL,
+					Description: "小艺Work 上游地址。默认云端（不需要桌面端运行）；填 127.0.0.1 可改走本地代理",
 				},
 				{
 					Name:        "model_prefix",

@@ -14,21 +14,28 @@ import (
 	"github.com/wangxiaoshuai136/xiaoyi-oauth/internal/xiaoyi"
 )
 
-// authFilePayload is the credential written by the login flow. Unlike the
-// first release, it carries the proxy key so the account is a real credential
-// the gateway can route with, exactly like an OAuth account.
+// authFilePayload is a self-contained credential: the cloud business
+// credential, its Huawei session tokens and the device identity.
 type authFilePayload struct {
-	Type           string   `json:"type"`
-	Provider       string   `json:"provider"`
-	OAuthProvider  string   `json:"oauth_provider,omitempty"`
-	AccountID      string   `json:"account_id,omitempty"`
-	Name           string   `json:"name,omitempty"`
-	UID            string   `json:"uid,omitempty"`
-	ProxyKey       string   `json:"proxy_key,omitempty"`
-	KeySource      string   `json:"key_source,omitempty"`
-	UpdatedAt      string   `json:"updated_at,omitempty"`
-	Disabled       bool     `json:"disabled,omitempty"`
-	ExcludedModels []string `json:"excluded_models,omitempty"`
+	Type               string   `json:"type"`
+	Provider           string   `json:"provider"`
+	OAuthProvider      string   `json:"oauth_provider,omitempty"`
+	AccountID          string   `json:"account_id,omitempty"`
+	Name               string   `json:"name,omitempty"`
+	UID                string   `json:"uid,omitempty"`
+	DisplayName        string   `json:"display_name,omitempty"`
+	ProxyKey           string   `json:"proxy_key,omitempty"`
+	KeySource          string   `json:"key_source,omitempty"`
+	BusinessCredential string   `json:"business_credential,omitempty"`
+	BusinessValidUntil int64    `json:"business_valid_until,omitempty"`
+	AccessToken        string   `json:"access_token,omitempty"`
+	AccessTokenExp     int64    `json:"access_token_exp,omitempty"`
+	RefreshToken       string   `json:"refresh_token,omitempty"`
+	ClientID           string   `json:"client_id,omitempty"`
+	DeviceID           string   `json:"device_id,omitempty"`
+	UpdatedAt          string   `json:"updated_at,omitempty"`
+	Disabled           bool     `json:"disabled,omitempty"`
+	ExcludedModels     []string `json:"excluded_models,omitempty"`
 }
 
 type rpcIdentifierResponse struct {
@@ -61,16 +68,10 @@ func (p *Plugin) handleAuthParse(raw []byte) (any, error) {
 	if len(req.RawJSON) > 0 {
 		_ = json.Unmarshal(req.RawJSON, &payload)
 	}
-	id := payload.UID
-	if id == "" {
-		id = payload.AccountID
-	}
-	if id == "" {
-		id = "local"
-	}
+	id := firstNonEmpty(payload.UID, payload.AccountID, "local")
 	return pluginapi.AuthParseResponse{
 		Handled: true,
-		Auth:    authData(id, payload.UID, payload.KeySource, req.RawJSON),
+		Auth:    authData(id, payload.DisplayName, payload.KeySource, req.RawJSON),
 	}, nil
 }
 
@@ -86,13 +87,12 @@ func looksLikeXiaoyiAuth(req pluginapi.AuthParseRequest) bool {
 
 func (p *Plugin) handleAuthLoginStart(raw []byte) (any, error) {
 	state := uuid.NewString()
-	key, source, _ := p.resolveKey(true)
-	uid := identityUID()
+	payload, err := importCloudCredential()
 	panel := strings.TrimRight(p.Config().PanelBaseURL, "/")
 	url := fmt.Sprintf("%s/v0/resource/plugins/%s/status?state=%s", panel, PluginID, state)
-	message := "正在导入小艺Work 桌面端登录态"
-	if key == "" {
-		message = "请先启动并登录小艺Work 桌面端，再点击重试"
+	message := "正在导入小艺Work 云端登录态"
+	if err != nil {
+		message = "未找到小艺Work 登录态，请先在小艺Work 中登录一次：" + err.Error()
 	}
 	return pluginapi.AuthLoginStartResponse{
 		Provider:  PluginID,
@@ -100,29 +100,27 @@ func (p *Plugin) handleAuthLoginStart(raw []byte) (any, error) {
 		State:     state,
 		ExpiresAt: time.Now().Add(15 * time.Minute),
 		Metadata: map[string]any{
-			"message":    message,
-			"uid":        uid,
-			"key_source": source,
+			"message": message,
+			"uid":     payload.UID,
 		},
 	}, nil
 }
 
 func (p *Plugin) handleAuthLoginPoll(raw []byte) (any, error) {
-	key, source, err := p.resolveKey(true)
-	uid := identityUID()
-	if err != nil || key == "" {
-		message := "请先启动并登录小艺Work 桌面端"
+	payload, err := importCloudCredential()
+	if err != nil || payload.BusinessCredential == "" {
+		message := "请先在小艺Work 中完成一次登录"
 		if err != nil {
 			message += "：" + err.Error()
 		}
 		return pluginapi.AuthLoginPollResponse{Status: pluginapi.AuthLoginStatusPending, Message: message}, nil
 	}
-	storage := credentialJSON(uid, key, source)
-	auth := authData(accountID(uid), uid, source, storage)
-	auth.NextRefreshAfter = time.Now().Add(time.Hour)
+	storage, _ := json.Marshal(payload)
+	auth := authData(payload.UID, payload.DisplayName, "keychain", storage)
+	auth.NextRefreshAfter = time.Now().Add(6 * time.Hour)
 	return pluginapi.AuthLoginPollResponse{
 		Status:  pluginapi.AuthLoginStatusSuccess,
-		Message: "已导入小艺Work 登录凭证（" + labelFor(uid) + "）",
+		Message: "已导入小艺Work 云端凭证（" + labelFor(payload) + "）",
 		Auth:    auth,
 	}, nil
 }
@@ -132,129 +130,136 @@ func (p *Plugin) handleAuthRefresh(raw []byte) (any, error) {
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &req)
 	}
-	key, source, err := p.resolveKey(true)
-	if err != nil || key == "" {
-		return nil, pluginabi.NewError("xiaoyiwork_key_unavailable", "无法读取小艺Work proxyKey: "+errorText(err), 503)
+	payload, err := importCloudCredential()
+	if err != nil || payload.BusinessCredential == "" {
+		return nil, pluginabi.NewError("xiaoyiwork_credential_unavailable", "无法读取小艺Work 云端凭证: "+errorText(err), 503)
 	}
-	uid := identityUID()
-	id := strings.TrimSpace(req.AuthID)
-	if id == "" {
-		id = accountID(uid)
-	}
-	storage := credentialJSON(uid, key, source)
-	auth := authData(id, uid, source, storage)
-	auth.NextRefreshAfter = time.Now().Add(time.Hour)
+	id := firstNonEmpty(req.AuthID, payload.UID, "local")
+	storage, _ := json.Marshal(payload)
+	auth := authData(id, payload.DisplayName, "keychain", storage)
+	auth.NextRefreshAfter = time.Now().Add(6 * time.Hour)
 	return pluginapi.AuthRefreshResponse{Auth: auth, NextRefreshAfter: auth.NextRefreshAfter}, nil
 }
 
-func authData(id, uid, source string, storage []byte) pluginapi.AuthData {
+// importCloudCredential reads everything needed for app-free cloud requests.
+func importCloudCredential() (authFilePayload, error) {
+	credential, err := xiaoyi.ReadBusinessCredential()
+	if err != nil {
+		return authFilePayload{}, err
+	}
+	session, _ := xiaoyi.ReadAuthSession()
+	identity, _ := xiaoyi.ReadIdentity()
+	uid := firstNonEmpty(credential.UID, identity.UID)
+	deviceID, _ := xiaoyi.DeviceID(uid)
+	display := xiaoyi.DisplayName(session.IDToken)
+	payload := authFilePayload{
+		Type:               PluginID,
+		Provider:           PluginID,
+		OAuthProvider:      PluginID,
+		AccountID:          uid,
+		UID:                uid,
+		DisplayName:        display,
+		BusinessCredential: credential.Credential,
+		BusinessValidUntil: credential.ValidUntil,
+		AccessToken:        session.AccessToken,
+		AccessTokenExp:     session.ExpiresAt,
+		RefreshToken:       session.RefreshToken,
+		ClientID:           xiaoyi.ClientID(session.IDToken),
+		DeviceID:           deviceID,
+		KeySource:          "keychain",
+		UpdatedAt:          time.Now().Format(time.RFC3339),
+	}
+	payload.Name = labelFor(payload)
+	return payload, nil
+}
+
+func authData(id, display, source string, storage []byte) pluginapi.AuthData {
 	if id == "" {
-		id = accountID(uid)
+		id = "local"
 	}
 	if source == "" {
-		source = "registry"
+		source = "keychain"
+	}
+	name := display
+	if name == "" {
+		name = xiaoyi.ShortUID(id)
 	}
 	return pluginapi.AuthData{
 		Provider:    PluginID,
 		ID:          id,
-		Label:       labelFor(uid),
+		Label:       PluginName + " (" + name + ")",
 		StorageJSON: storage,
 		Metadata: map[string]any{
 			"account_id":     id,
-			"uid":            uid,
+			"uid":            id,
+			"display_name":   display,
 			"provider":       PluginID,
 			"oauth_provider": PluginID,
-			"auth_kind":      "desktop",
+			"auth_kind":      "cloud",
 			"key_source":     source,
 		},
 		Attributes: map[string]string{"oauth_provider": PluginID},
 	}
 }
 
-func credentialJSON(uid, key, source string) []byte {
-	payload := authFilePayload{
-		Type:          PluginID,
-		Provider:      PluginID,
-		OAuthProvider: PluginID,
-		AccountID:     accountID(uid),
-		Name:          labelFor(uid),
-		UID:           uid,
-		ProxyKey:      key,
-		KeySource:     source,
-		UpdatedAt:     time.Now().Format(time.RFC3339),
+func labelFor(payload authFilePayload) string {
+	if payload.DisplayName != "" {
+		return PluginName + " (" + payload.DisplayName + ")"
 	}
-	raw, _ := json.Marshal(payload)
-	return raw
+	if payload.UID != "" {
+		return PluginName + " (" + xiaoyi.ShortUID(payload.UID) + ")"
+	}
+	return PluginName
 }
 
-func accountID(uid string) string {
-	uid = strings.TrimSpace(uid)
-	if uid == "" {
-		return "local"
-	}
-	return uid
-}
-
-func labelFor(uid string) string {
-	if strings.TrimSpace(uid) == "" {
-		return PluginName + " (local)"
-	}
-	return PluginName + " (" + xiaoyi.ShortUID(uid) + ")"
-}
-
-func identityUID() string {
-	identity, err := xiaoyi.ReadIdentity()
-	if err != nil {
-		return ""
-	}
-	return identity.UID
-}
-
-// ensureAuthFile keeps one credential per desktop account. It prefers writing
-// the oauth file directly so a keyless record from 0.1.x is upgraded in place
-// without losing the user's disabled/excluded-model settings.
+// ensureAuthFile keeps one credential per desktop account, upgrading an
+// existing file in place so disabled/excluded-model settings survive.
 func (p *Plugin) ensureAuthFile() {
-	key, source, _ := p.resolveKey(false)
-	uid := identityUID()
-	dir := resolveOAuthDir()
-	pattern := filepath.Join(dir, authFileName)
-	if existing := strings.TrimSpace(uid); existing != "" {
-		pattern = filepath.Join(dir, "xiaoyiwork-"+existing+".json")
+	payload, err := importCloudCredential()
+	if err != nil || payload.BusinessCredential == "" {
+		return
 	}
-	if raw, err := os.ReadFile(pattern); err == nil {
-		var payload authFilePayload
-		_ = json.Unmarshal(raw, &payload)
-		if key != "" {
-			payload.ProxyKey = key
-			payload.KeySource = source
-		}
-		if payload.UID == "" {
-			payload.UID = uid
-		}
-		payload.Type = PluginID
-		payload.Provider = PluginID
-		payload.OAuthProvider = PluginID
-		payload.UpdatedAt = time.Now().Format(time.RFC3339)
-		if merged, err := json.Marshal(payload); err == nil {
-			_ = os.WriteFile(pattern, merged, 0o600)
+	dir := resolveOAuthDir()
+	name := authFileName
+	if payload.UID != "" {
+		name = "xiaoyiwork-" + payload.UID + ".json"
+	}
+	path := filepath.Join(dir, name)
+	if raw, err := os.ReadFile(path); err == nil {
+		var existing authFilePayload
+		_ = json.Unmarshal(raw, &existing)
+		existing.Type = PluginID
+		existing.Provider = PluginID
+		existing.OAuthProvider = PluginID
+		existing.UID = payload.UID
+		existing.AccountID = payload.UID
+		existing.DisplayName = payload.DisplayName
+		existing.BusinessCredential = payload.BusinessCredential
+		existing.BusinessValidUntil = payload.BusinessValidUntil
+		existing.AccessToken = payload.AccessToken
+		existing.AccessTokenExp = payload.AccessTokenExp
+		existing.RefreshToken = payload.RefreshToken
+		existing.ClientID = payload.ClientID
+		existing.DeviceID = payload.DeviceID
+		existing.KeySource = payload.KeySource
+		existing.UpdatedAt = payload.UpdatedAt
+		existing.Name = labelFor(existing)
+		if merged, err := json.Marshal(existing); err == nil {
+			_ = os.WriteFile(path, merged, 0o600)
 		}
 		return
 	}
-
-	name := authFileName
-	if uid != "" {
-		name = "xiaoyiwork-" + uid + ".json"
-	}
+	storage, _ := json.Marshal(payload)
 	if _, err := p.callHost(pluginabi.MethodHostAuthSave, pluginapi.HostAuthSaveRequest{
 		Name: name,
-		JSON: credentialJSON(uid, key, source),
+		JSON: storage,
 	}); err != nil {
 		if p.Config().Debug {
 			p.log("warn", "写入小艺Work 凭据失败："+err.Error(), nil)
 		}
 		return
 	}
-	p.log("info", "已写入小艺Work 登录凭证（"+labelFor(uid)+"）", nil)
+	p.log("info", "已写入小艺Work 云端凭证（"+labelFor(payload)+"）", nil)
 }
 
 func resolveOAuthDir() string {
@@ -266,7 +271,7 @@ func resolveOAuthDir() string {
 	return `../oauth`
 }
 
-// storedProxyKey returns a key persisted in the credential, if any.
+// storedProxyKey returns a local-proxy key persisted in the credential.
 func storedProxyKey(storage []byte, metadata map[string]any) string {
 	if len(storage) > 0 {
 		var payload authFilePayload
@@ -279,6 +284,15 @@ func storedProxyKey(storage []byte, metadata map[string]any) string {
 	if metadata != nil {
 		if key, ok := metadata["proxy_key"].(string); ok && strings.TrimSpace(key) != "" {
 			return strings.TrimSpace(key)
+		}
+	}
+	return ""
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
 		}
 	}
 	return ""
