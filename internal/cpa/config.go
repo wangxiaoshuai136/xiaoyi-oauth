@@ -19,8 +19,6 @@ type PluginConfig struct {
 	RouteUnprefixedModels bool
 	// RequestTimeoutSeconds bounds one upstream request.
 	RequestTimeoutSeconds int
-	// PanelBaseURL is the gateway base the login dialog opens.
-	PanelBaseURL string
 	// Debug emits verbose host logs.
 	Debug bool
 }
@@ -32,7 +30,6 @@ func DefaultPluginConfig() PluginConfig {
 		ModelPrefix:           "xiaoyiwork/",
 		RouteUnprefixedModels: true,
 		RequestTimeoutSeconds: 600,
-		PanelBaseURL:          "http://127.0.0.1:8317",
 	}
 }
 
@@ -64,10 +61,6 @@ func ParsePluginConfig(raw []byte) PluginConfig {
 		case "request_timeout_seconds":
 			if n, err := strconv.Atoi(value); err == nil && n > 0 {
 				cfg.RequestTimeoutSeconds = n
-			}
-		case "panel_base_url":
-			if value != "" {
-				cfg.PanelBaseURL = strings.TrimRight(value, "/")
 			}
 		case "debug":
 			cfg.Debug = parseBool(value, cfg.Debug)
