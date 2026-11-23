@@ -27,7 +27,7 @@ x-request-from: xiaoyiWork
 
 ## 安装
 
-1. 把 `xiaoyiwork-v0.5.1.dll` 放到 `<EasyCLIProxyAPI 目录>\cpa-core\plugins\windows\amd64\`。
+1. 把 `xiaoyiwork-v0.6.0.dll` 放到 `<EasyCLIProxyAPI 目录>\cpa-core\plugins\windows\amd64\`。
 2. 在 `cpa-core\config.yaml` 的 `plugins.configs` 下启用：
 
 ```yaml
@@ -42,7 +42,8 @@ plugins:
 
 ## 账号与登录
 
-- **纯账号登录**：在 ECPA 凭据页点“开始登录”，插件返回华为账号页地址，由 **ECPA 按它的浏览器设置打开**（默认浏览器或你在设置里选的浏览器）。授权后回调到本机 `127.0.0.1:17355`，插件自动换取 token 并创建云端凭据。全程不需要小艺Work。
+- **纯账号登录**：在 ECPA 凭据页点“开始登录”，插件会**单独拉起一个独立 Edge/Chrome 窗口**（每次登录用全新临时 profile，不碰日常浏览器，也不复用已有登录态），适合多账号。授权后回调到本机 `127.0.0.1:17355`，插件自动换取 token 并创建云端凭据。
+- 如果机器上没有 Edge/Chrome，才回退为返回华为地址让 ECPA 打开。
 - **扫码登录**：华为登录页右上角可以切换“扫码登录”，用手机扫码确认即可；回调仍回到本机。
 - **立即落盘**：授权成功后插件在回调里直接写 `oauth/xiaoyiwork-<uid>.json`，账号卡无需等 GUI 轮询就会更新。
 - **不扫描本地文件**：插件不读取小艺Work 的注册表/缓存；凭据只来自华为账号登录（或显式导入的凭据文件）。
@@ -91,14 +92,14 @@ plugins:
 - 看到 502「连接小艺Work 本地代理失败」是 0.1.x 本地模式在桌面端关闭时的旧行为；0.2.x 默认云端直连后不再出现。
 - 100% 失败统计可能包含旧版本配合 `request-retry: 200` 产生的重试风暴；修复后新请求正常。
 - 401 `authFailed`：当前 businessCredential 已被新的登录/刷新替换或失效；点一次“开始登录”重新授权即可（云端同一账号同一设备只保留一个有效凭据）。
-- `回调端口 17355 被占用`：旧版本热重载留下的监听；重启一次 ECPA 内核即可，0.5.1 起插件 shutdown 会主动释放。
+- `回调端口 17355 被占用`：旧版本热重载留下的监听；重启一次 ECPA 内核即可，0.6.0 起插件 shutdown 会主动释放。
 
 ## 构建
 
 ```powershell
 $env:PATH = 'C:\msys64\mingw64\bin;' + $env:PATH
 $env:CGO_ENABLED = '1'; $env:GOOS = 'windows'; $env:GOARCH = 'amd64'; $env:GOAMD64 = 'v1'
-go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o bin/xiaoyiwork-v0.5.1.dll ./cmd/xiaoyiwork-plugin
+go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o bin/xiaoyiwork-v0.6.0.dll ./cmd/xiaoyiwork-plugin
 ```
 
 必须用 `-buildmode=c-shared`；CI 在 Linux 上用 `x86_64-w64-mingw32-gcc` 交叉编译。
