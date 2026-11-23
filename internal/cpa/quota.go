@@ -116,6 +116,8 @@ func buildQuotaResponse(body []byte) pluginapi.QuotaFetchResponse {
 		},
 	}
 	var buckets []pluginapi.QuotaBucket
+	now := time.Now()
+	nextMonth := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, now.Location())
 	for _, item := range counts {
 		if points > 0 && item.value <= 0 {
 			continue
@@ -138,9 +140,15 @@ func buildQuotaResponse(body []byte) pluginapi.QuotaFetchResponse {
 		if expire != "" && item.name == "会员积分" {
 			desc += " · 有效期至 " + expire
 		}
+		resetTime := ""
+		if item.name == "免费额度" {
+			desc += " · 每月 1 日刷新"
+			resetTime = nextMonth.Format(time.RFC3339)
+		}
 		buckets = append(buckets, pluginapi.QuotaBucket{
 			Window:            item.name,
 			RemainingFraction: fraction,
+			ResetTime:         resetTime,
 			Description:       desc,
 		})
 	}
