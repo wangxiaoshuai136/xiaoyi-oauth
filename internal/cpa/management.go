@@ -2,6 +2,7 @@ package cpa
 
 import (
 	"encoding/json"
+	"html"
 	"net/http"
 	"strings"
 
@@ -23,6 +24,10 @@ func (p *Plugin) handleManagementHandle(raw []byte) (any, error) {
 	var req pluginapi.ManagementRequest
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &req)
+	}
+	state := ""
+	if req.Query != nil {
+		state = req.Query.Get("state")
 	}
 	path := strings.ToLower(strings.TrimSpace(req.Path))
 	if idx := strings.IndexByte(path, '?'); idx >= 0 {
@@ -46,13 +51,25 @@ func (p *Plugin) handleManagementHandle(raw []byte) (any, error) {
 		}, nil
 	}
 	if path == "/status" || strings.HasPrefix(path, "/v0/resource/plugins/"+PluginID) {
+		page := statusHTML
+		p.loginMu.Lock()
+		session := p.loginSessions[state]
+		p.loginMu.Unlock()
+		if session != nil {
+			if sessionDone(session) {
+				page = `<!doctype html><meta charset="utf-8"><body style="font:16px system-ui;background:#0f1115;color:#e8eaf0;display:grid;place-items:center;height:100vh"><div><h2>登录已完成</h2><p>可以关闭这个窗口，回到 ECPA。</p></div></body>`
+			} else if session.authURL != "" {
+				escaped := html.EscapeString(session.authURL)
+				page = `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=` + escaped + `"><body style="font:16px system-ui;background:#0f1115;color:#e8eaf0;display:grid;place-items:center;height:100vh"><div><h2>正在打开华为账号登录…</h2><p>如果没有自动跳转，<a style="color:#7cc4ff" href="` + escaped + `">点这里</a>。</p></div></body>`
+			}
+		}
 		return pluginapi.ManagementResponse{
 			StatusCode: http.StatusOK,
 			Headers: http.Header{
 				"Content-Type":  []string{"text/html; charset=utf-8"},
 				"Cache-Control": []string{"no-store"},
 			},
-			Body: []byte(statusHTML),
+			Body: []byte(page),
 		}, nil
 	}
 	return pluginapi.ManagementResponse{StatusCode: http.StatusNotFound, Body: []byte("not found")}, nil

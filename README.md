@@ -27,7 +27,7 @@ x-request-from: xiaoyiWork
 
 ## 安装
 
-1. 把 `xiaoyiwork-v0.4.0.dll` 放到 `<EasyCLIProxyAPI 目录>\cpa-core\plugins\windows\amd64\`。
+1. 把 `xiaoyiwork-v0.4.1.dll` 放到 `<EasyCLIProxyAPI 目录>\cpa-core\plugins\windows\amd64\`。
 2. 在 `cpa-core\config.yaml` 的 `plugins.configs` 下启用：
 
 ```yaml
@@ -81,7 +81,7 @@ plugins:
 
 - **小艺Work 未安装/未启动、19693 未监听**时：8 个模型全部返回 200，非流式 `content=OK`。
 - 华为账号登录：authorize 页 200、回调服务器监听 `127.0.0.1:17355`、错误 state 返回 400。
-- 额度：凭据卡显示 AI 积分、会员/订阅与有效期（来自 billing `privilege/query`）。
+- 额度：凭据卡按来源拆分显示免费额度/赠送/购买/会员/补偿积分，百分比按总积分计算（来自 billing `privilege/query`）。
 - 流式：标准 chunk + usage + `data: [DONE]`。
 - `tools`：`finish_reason=tool_calls`，arguments 正确合并。
 - `reasoning_effort=high`：正常返回 reasoning_content。
@@ -92,14 +92,14 @@ plugins:
 - 看到 502「连接小艺Work 本地代理失败」是 0.1.x 本地模式在桌面端关闭时的旧行为；0.2.x 默认云端直连后不再出现。
 - 100% 失败统计可能包含旧版本配合 `request-retry: 200` 产生的重试风暴；修复后新请求正常。
 - 401 `authFailed`：当前 businessCredential 已被新的登录/刷新替换或失效；点一次“开始登录”重新授权即可（云端同一账号同一设备只保留一个有效凭据）。
-- `回调端口 17355 被占用`：旧版本热重载留下的监听；重启一次 ECPA 内核即可，0.4.0 起插件 shutdown 会主动释放。
+- `回调端口 17355 被占用`：旧版本热重载留下的监听；重启一次 ECPA 内核即可，0.4.1 起插件 shutdown 会主动释放。
 
 ## 构建
 
 ```powershell
 $env:PATH = 'C:\msys64\mingw64\bin;' + $env:PATH
 $env:CGO_ENABLED = '1'; $env:GOOS = 'windows'; $env:GOARCH = 'amd64'; $env:GOAMD64 = 'v1'
-go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o bin/xiaoyiwork-v0.4.0.dll ./cmd/xiaoyiwork-plugin
+go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o bin/xiaoyiwork-v0.4.1.dll ./cmd/xiaoyiwork-plugin
 ```
 
 必须用 `-buildmode=c-shared`；CI 在 Linux 上用 `x86_64-w64-mingw32-gcc` 交叉编译。

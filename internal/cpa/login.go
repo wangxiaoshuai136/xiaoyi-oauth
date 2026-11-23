@@ -23,6 +23,7 @@ type oauthSession struct {
 	payload  authFilePayload
 	err      error
 	browser  *xiaoyi.LoginBrowser
+	authURL  string
 }
 
 func (p *Plugin) handleAuthLoginStart(raw []byte) (any, error) {
@@ -55,6 +56,7 @@ func (p *Plugin) handleAuthLoginStart(raw []byte) (any, error) {
 	p.loginMu.Unlock()
 
 	authURL := xiaoyi.AuthorizeURL(state, challenge)
+	session.authURL = authURL
 	browser, err := xiaoyi.LaunchLoginBrowser(authURL)
 	if err != nil {
 		return nil, pluginabi.NewError("oauth_browser_unavailable", err.Error(), http.StatusInternalServerError)

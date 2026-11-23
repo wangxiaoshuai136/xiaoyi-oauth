@@ -80,35 +80,57 @@ func buildQuotaResponse(body []byte) pluginapi.QuotaFetchResponse {
 			points += privilegePoints(asMap(item))
 		}
 	}
+	freePoints, _ := toFloat(aiPoints["freePoints"])
+	giftPoints, _ := toFloat(aiPoints["giftPoints"])
+	purchasedPoints, _ := toFloat(aiPoints["purchasedPoints"])
+	memberPoints, _ := toFloat(aiPoints["memberPoints"])
+	compstPoints, _ := toFloat(aiPoints["compstPoints"])
+	if points == 0 {
+		points = freePoints + giftPoints + purchasedPoints + memberPoints + compstPoints
+	}
 	plan := firstString(membership["skuGroupName"], membership["skuName"], "小艺Work")
 	tier := firstString(subscription["skuName"], subscription["skuGroupName"], "华为账号")
 	expire := firstString(subscription["expireTime"])
-	hasResource, hasFlag := root["hasAvailableResource"].(bool)
-	remainingFraction := 1.0
-	if hasFlag && !hasResource {
-		remainingFraction = 0
-	} else if !hasFlag && points <= 0 {
-		remainingFraction = 0
+	counts := []struct {
+		name  string
+		value float64
+	}{
+		{"免费额度", freePoints},
+		{"赠送积分", giftPoints},
+		{"购买积分", purchasedPoints},
+		{"会员积分", memberPoints},
+		{"补偿积分", compstPoints},
 	}
-	desc := fmt.Sprintf("剩余 %g 积分", points)
-	if expire != "" {
-		desc += " · 有效期至 " + expire
-	}
-
 	resp := pluginapi.QuotaFetchResponse{
 		Subscription: &pluginapi.QuotaSubscription{Plan: plan, TierName: tier, TierID: tier},
 		Summary: []pluginapi.QuotaMetric{
-			{Key: "ai_points", Label: "AI 积分", Value: points, Unit: "积分", Format: "number"},
+			{Key: "ai_points", Label: "总积分", Value: points, Unit: "积分", Format: "number"},
 		},
-		Groups: []pluginapi.QuotaGroup{{
-			DisplayName: "小艺Work 积分",
-			Buckets: []pluginapi.QuotaBucket{{
-				Window:            "AI 积分",
-				RemainingFraction: remainingFraction,
-				ResetTime:         expire,
-				Description:       desc,
-			}},
-		}},
+	}
+	var buckets []pluginapi.QuotaBucket
+	for _, item := range counts {
+		if points > 0 && item.value <= 0 {
+			continue
+		}
+		fraction := 0.0
+		if points > 0 {
+			fraction = item.value / points
+		}
+		desc := fmt.Sprintf("%g 积分", item.value)
+		if points > 0 {
+			desc += fmt.Sprintf(" · 占 %.0f%%", fraction*100)
+		}
+		if expire != "" && item.name == "会员积分" {
+			desc += " · 有效期至 " + expire
+		}
+		buckets = append(buckets, pluginapi.QuotaBucket{
+			Window:            item.name,
+			RemainingFraction: fraction,
+			Description:       desc,
+		})
+	}
+	if len(buckets) > 0 {
+		resp.Groups = []pluginapi.QuotaGroup{{DisplayName: "积分构成", Buckets: buckets}}
 	}
 	return resp
 }
