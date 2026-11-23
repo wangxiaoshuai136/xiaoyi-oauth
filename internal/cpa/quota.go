@@ -89,17 +89,25 @@ func buildQuotaResponse(body []byte) pluginapi.QuotaFetchResponse {
 		points = freePoints + giftPoints + purchasedPoints + memberPoints + compstPoints
 	}
 	plan := firstString(membership["skuGroupName"], membership["skuName"], "小艺Work")
+	membershipID := firstString(membership["skuGroupId"])
 	tier := firstString(subscription["skuName"], subscription["skuGroupName"], "华为账号")
 	expire := firstString(subscription["expireTime"])
+	// The trial plan grants 200 free points per month; the API only returns the
+	// remaining balance, so the monthly allowance is the known denominator.
+	freeTotal := freePoints
+	if membershipID == "xy_free_benefit" {
+		freeTotal = 200
+	}
 	counts := []struct {
 		name  string
 		value float64
+		total float64
 	}{
-		{"免费额度", freePoints},
-		{"赠送积分", giftPoints},
-		{"购买积分", purchasedPoints},
-		{"会员积分", memberPoints},
-		{"补偿积分", compstPoints},
+		{"免费额度", freePoints, freeTotal},
+		{"赠送积分", giftPoints, giftPoints},
+		{"购买积分", purchasedPoints, purchasedPoints},
+		{"会员积分", memberPoints, memberPoints},
+		{"补偿积分", compstPoints, compstPoints},
 	}
 	resp := pluginapi.QuotaFetchResponse{
 		Subscription: &pluginapi.QuotaSubscription{Plan: plan, TierName: tier, TierID: tier},
@@ -113,12 +121,19 @@ func buildQuotaResponse(body []byte) pluginapi.QuotaFetchResponse {
 			continue
 		}
 		fraction := 0.0
-		if points > 0 {
-			fraction = item.value / points
+		if item.total > 0 {
+			fraction = item.value / item.total
+			if fraction > 1 {
+				fraction = 1
+			}
 		}
-		desc := fmt.Sprintf("%g 积分", item.value)
-		if points > 0 {
-			desc += fmt.Sprintf(" · 占 %.0f%%", fraction*100)
+		desc := fmt.Sprintf("剩余 %g", item.value)
+		if item.total > item.value {
+			desc += fmt.Sprintf(" / %g", item.total)
+		}
+		desc += " 积分"
+		if item.total > 0 {
+			desc += fmt.Sprintf(" · %.0f%%", fraction*100)
 		}
 		if expire != "" && item.name == "会员积分" {
 			desc += " · 有效期至 " + expire
