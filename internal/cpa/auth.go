@@ -38,6 +38,33 @@ type authFilePayload struct {
 	ExcludedModels     []string `json:"excluded_models,omitempty"`
 }
 
+// mergeAuthPayload updates only the fields the plugin owns. Everything else in
+// the auth file (host-managed note, priority, headers, ...) must survive a
+// credential rewrite; unmarshalling into authFilePayload and marshalling it
+// back would silently drop those keys.
+func mergeAuthPayload(raw []byte, payload authFilePayload) []byte {
+	doc := map[string]any{}
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &doc)
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return nil
+	}
+	patch := map[string]any{}
+	if err := json.Unmarshal(encoded, &patch); err != nil {
+		return nil
+	}
+	for key, value := range patch {
+		doc[key] = value
+	}
+	merged, err := json.Marshal(doc)
+	if err != nil {
+		return nil
+	}
+	return merged
+}
+
 type rpcIdentifierResponse struct {
 	Identifier          string                        `json:"identifier"`
 	Identifiers         []string                      `json:"identifiers,omitempty"`
@@ -69,10 +96,30 @@ func (p *Plugin) handleAuthParse(raw []byte) (any, error) {
 		_ = json.Unmarshal(req.RawJSON, &payload)
 	}
 	id := firstNonEmpty(payload.UID, payload.AccountID, "local")
+	auth := authData(id, payload.DisplayName, payload.KeySource, req.RawJSON)
+	if note := noteFromJSON(req.RawJSON); note != "" {
+		if auth.Metadata == nil {
+			auth.Metadata = map[string]any{}
+		}
+		auth.Metadata["note"] = note
+		if auth.Attributes == nil {
+			auth.Attributes = map[string]string{}
+		}
+		auth.Attributes["note"] = note
+	}
 	return pluginapi.AuthParseResponse{
 		Handled: true,
-		Auth:    authData(id, payload.DisplayName, payload.KeySource, req.RawJSON),
+		Auth:    auth,
 	}, nil
+}
+
+func noteFromJSON(raw []byte) string {
+	var doc map[string]any
+	if len(raw) == 0 || json.Unmarshal(raw, &doc) != nil {
+		return ""
+	}
+	note, _ := doc["note"].(string)
+	return strings.TrimSpace(note)
 }
 
 func looksLikeXiaoyiAuth(req pluginapi.AuthParseRequest) bool {
@@ -125,8 +172,38 @@ func (p *Plugin) handleAuthRefresh(raw []byte) (any, error) {
 	p.persistLoginPayload(payload)
 	storage, _ := json.Marshal(payload)
 	auth := authData(id, payload.DisplayName, payload.KeySource, storage)
+	// The host replaces its metadata with ours whenever we return any keys, so
+	// carry over host-managed fields such as the account note ("note").
+	preserveHostAuthFields(&auth, req.Metadata, req.Attributes)
 	auth.NextRefreshAfter = time.Now().Add(6 * time.Hour)
 	return pluginapi.AuthRefreshResponse{Auth: auth, NextRefreshAfter: auth.NextRefreshAfter}, nil
+}
+
+// preserveHostAuthFields keeps host-managed metadata/attributes that the
+// plugin does not own. Dropping them would erase the account note on refresh.
+func preserveHostAuthFields(auth *pluginapi.AuthData, metadata map[string]any, attributes map[string]string) {
+	if auth == nil {
+		return
+	}
+	if auth.Metadata == nil {
+		auth.Metadata = map[string]any{}
+	}
+	for key, value := range metadata {
+		if _, exists := auth.Metadata[key]; !exists {
+			auth.Metadata[key] = value
+		}
+	}
+	if len(attributes) == 0 {
+		return
+	}
+	if auth.Attributes == nil {
+		auth.Attributes = map[string]string{}
+	}
+	for key, value := range attributes {
+		if _, exists := auth.Attributes[key]; !exists {
+			auth.Attributes[key] = value
+		}
+	}
 }
 
 // importCloudCredential reads everything needed for app-free cloud requests.
@@ -214,25 +291,8 @@ func (p *Plugin) ensureAuthFile() {
 	}
 	path := filepath.Join(dir, name)
 	if raw, err := os.ReadFile(path); err == nil {
-		var existing authFilePayload
-		_ = json.Unmarshal(raw, &existing)
-		existing.Type = PluginID
-		existing.Provider = PluginID
-		existing.OAuthProvider = PluginID
-		existing.UID = payload.UID
-		existing.AccountID = payload.UID
-		existing.DisplayName = payload.DisplayName
-		existing.BusinessCredential = payload.BusinessCredential
-		existing.BusinessValidUntil = payload.BusinessValidUntil
-		existing.AccessToken = payload.AccessToken
-		existing.AccessTokenExp = payload.AccessTokenExp
-		existing.RefreshToken = payload.RefreshToken
-		existing.ClientID = payload.ClientID
-		existing.DeviceID = payload.DeviceID
-		existing.KeySource = payload.KeySource
-		existing.UpdatedAt = payload.UpdatedAt
-		existing.Name = labelFor(existing)
-		if merged, err := json.Marshal(existing); err == nil {
+		payload.Name = labelFor(payload)
+		if merged := mergeAuthPayload(raw, payload); merged != nil {
 			_ = os.WriteFile(path, merged, 0o600)
 		}
 		return
@@ -267,30 +327,37 @@ func (p *Plugin) persistCloudCredential(auth *requestAuth) {
 		return
 	}
 	path := filepath.Join(resolveOAuthDir(), "xiaoyiwork-"+auth.UID+".json")
-	var payload authFilePayload
-	if raw, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(raw, &payload)
+	var raw []byte
+	if data, err := os.ReadFile(path); err == nil {
+		raw = data
 	}
-	payload.Type = PluginID
-	payload.Provider = PluginID
-	payload.OAuthProvider = PluginID
-	payload.UID = auth.UID
-	payload.AccountID = auth.UID
-	payload.BusinessCredential = auth.Auth.BusinessCredential
-	payload.BusinessValidUntil = auth.BusinessValidUntil
-	payload.AccessToken = auth.AccessToken
-	payload.AccessTokenExp = auth.AccessTokenExp
-	if auth.RefreshToken != "" {
-		payload.RefreshToken = auth.RefreshToken
+	payload := authFilePayload{
+		Type:               PluginID,
+		Provider:           PluginID,
+		OAuthProvider:      PluginID,
+		UID:                auth.UID,
+		AccountID:          auth.UID,
+		BusinessCredential: auth.Auth.BusinessCredential,
+		BusinessValidUntil: auth.BusinessValidUntil,
+		AccessToken:        auth.AccessToken,
+		AccessTokenExp:     auth.AccessTokenExp,
+		RefreshToken:       auth.RefreshToken,
+		ClientID:           auth.ClientID,
+		DeviceID:           auth.DeviceID,
+		KeySource:          "refreshed",
+		UpdatedAt:          time.Now().Format(time.RFC3339),
 	}
-	payload.ClientID = auth.ClientID
-	payload.DeviceID = auth.DeviceID
-	payload.KeySource = "refreshed"
-	payload.UpdatedAt = time.Now().Format(time.RFC3339)
-	if payload.Name == "" {
-		payload.Name = labelFor(payload)
+	payload.Name = labelFor(payload)
+	var existing struct {
+		Name string `json:"name"`
 	}
-	if merged, err := json.Marshal(payload); err == nil {
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &existing)
+	}
+	if existing.Name != "" {
+		payload.Name = existing.Name
+	}
+	if merged := mergeAuthPayload(raw, payload); merged != nil {
 		_ = os.WriteFile(path, merged, 0o600)
 	}
 }
@@ -303,27 +370,13 @@ func (p *Plugin) persistLoginPayload(payload authFilePayload) {
 	}
 	dir := resolveOAuthDir()
 	path := filepath.Join(dir, "xiaoyiwork-"+payload.UID+".json")
-	var existing authFilePayload
-	if raw, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(raw, &existing)
+	var raw []byte
+	if data, err := os.ReadFile(path); err == nil {
+		raw = data
 	}
-	existing.Type = PluginID
-	existing.Provider = PluginID
-	existing.OAuthProvider = PluginID
-	existing.AccountID = payload.UID
-	existing.UID = payload.UID
-	existing.DisplayName = payload.DisplayName
-	existing.BusinessCredential = payload.BusinessCredential
-	existing.BusinessValidUntil = payload.BusinessValidUntil
-	existing.AccessToken = payload.AccessToken
-	existing.AccessTokenExp = payload.AccessTokenExp
-	existing.RefreshToken = payload.RefreshToken
-	existing.ClientID = payload.ClientID
-	existing.DeviceID = payload.DeviceID
-	existing.KeySource = payload.KeySource
-	existing.UpdatedAt = payload.UpdatedAt
-	existing.Name = labelFor(existing)
-	if merged, err := json.Marshal(existing); err == nil {
+	payload.AccountID = payload.UID
+	payload.Name = labelFor(payload)
+	if merged := mergeAuthPayload(raw, payload); merged != nil {
 		_ = os.WriteFile(path, merged, 0o600)
 	}
 	_ = os.Remove(filepath.Join(dir, authFileName))
