@@ -21,6 +21,8 @@ type PluginConfig struct {
 	RequestTimeoutSeconds int
 	// Debug emits verbose host logs.
 	Debug bool
+	// AutoFallback retries an empty upstream error frame with a stronger model.
+	AutoFallback bool
 }
 
 // DefaultPluginConfig returns the documented defaults.
@@ -30,6 +32,7 @@ func DefaultPluginConfig() PluginConfig {
 		ModelPrefix:           "xiaoyiwork/",
 		RouteUnprefixedModels: true,
 		RequestTimeoutSeconds: 600,
+		AutoFallback:          false,
 	}
 }
 
@@ -64,6 +67,8 @@ func ParsePluginConfig(raw []byte) PluginConfig {
 			}
 		case "debug":
 			cfg.Debug = parseBool(value, cfg.Debug)
+		case "auto_fallback":
+			cfg.AutoFallback = parseBool(value, cfg.AutoFallback)
 		}
 	}
 	if cfg.ModelPrefix != "" && !strings.HasSuffix(cfg.ModelPrefix, "/") {

@@ -56,6 +56,24 @@ func NewStreamTranslator(model string) *StreamTranslator {
 	}
 }
 
+// FrameError is an error frame delivered inside the upstream SSE stream.
+type FrameError struct {
+	Code    string
+	Message string
+}
+
+// Empty reports whether the upstream sent an error frame without any detail.
+func (e *FrameError) Empty() bool {
+	return strings.TrimSpace(e.Code) == "" && strings.TrimSpace(e.Message) == ""
+}
+
+func (e *FrameError) Error() string {
+	if e.Empty() {
+		return "小艺Work 上游返回空错误帧（无 code/message，模型侧中断）"
+	}
+	return fmt.Sprintf("小艺Work 上游错误 %s: %s", e.Code, e.Message)
+}
+
 // Translate converts one data payload into zero or more OpenAI SSE frames.
 func (t *StreamTranslator) Translate(payload []byte) ([][]byte, error) {
 	payload = trimSSEPayload(payload)
@@ -67,15 +85,11 @@ func (t *StreamTranslator) Translate(payload []byte) ([][]byte, error) {
 		return nil, nil
 	}
 	if frame.Error != nil {
-		code := ""
+		failure := &FrameError{Message: strings.TrimSpace(frame.Error.Message)}
 		if frame.Error.Code != nil {
-			code = fmt.Sprintf("%v", frame.Error.Code)
+			failure.Code = fmt.Sprintf("%v", frame.Error.Code)
 		}
-		message := strings.TrimSpace(frame.Error.Message)
-		if message == "" {
-			message = "上游返回了未说明的错误"
-		}
-		return nil, fmt.Errorf("xiayiwork 上游错误 %s: %s", code, message)
+		return nil, failure
 	}
 	if usage := normalizeUsage(frame.Usage); usage != nil {
 		t.usage = usage

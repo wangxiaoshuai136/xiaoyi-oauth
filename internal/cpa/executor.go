@@ -49,6 +49,37 @@ var unsupportedParams = []string{
 	"thinking",
 }
 
+// fallbackModels maps a model whose upstream generation can abort with an
+// empty SSE error frame to a stronger model that completes the same request.
+// Substituting models costs more quota, so it is opt-in via auto_fallback.
+var fallbackModels = map[string]string{
+	"GLM_5.3_FLASH_VE": "LLM_GLM5.3",
+}
+
+func (p *Plugin) fallbackTarget(model string, err error) (string, bool) {
+	if !p.Config().AutoFallback {
+		return "", false
+	}
+	var frameErr *FrameError
+	if !errors.As(err, &frameErr) || !frameErr.Empty() {
+		return "", false
+	}
+	target, ok := fallbackModels[model]
+	if !ok || target == "" || target == model {
+		return "", false
+	}
+	return target, true
+}
+
+func withModel(payload []byte, model string) ([]byte, error) {
+	var doc map[string]any
+	if err := json.Unmarshal(payload, &doc); err != nil {
+		return nil, err
+	}
+	doc["model"] = model
+	return json.Marshal(doc)
+}
+
 func (p *Plugin) handleExecutorIdentifier() (any, error) {
 	return map[string]any{"identifier": PluginID}, nil
 }
@@ -216,7 +247,7 @@ func (p *Plugin) handleExecutorExecute(raw []byte) (any, error) {
 	if err != nil {
 		return nil, keyError(err)
 	}
-	_, clientModel, payload, err := p.prepareRequest(req)
+	upstreamModel, clientModel, payload, err := p.prepareRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -230,8 +261,26 @@ func (p *Plugin) handleExecutorExecute(raw []byte) (any, error) {
 
 	trans := NewStreamTranslator(clientModel)
 	if looksLikeSSE(body) {
-		if err := consumeSSE(body, trans); err != nil {
-			return nil, err
+		frameErr := consumeSSE(body, trans)
+		if frameErr != nil {
+			if target, ok := p.fallbackTarget(upstreamModel, frameErr); ok {
+				p.log("warn", fmt.Sprintf("%s 返回空错误帧，自动回退到 %s 重试", upstreamModel, target), nil)
+				if fbPayload, encodeErr := withModel(payload, target); encodeErr == nil {
+					if fbBody, chatErr := p.doChat(ctx, &auth, fbPayload); chatErr == nil {
+						fbTrans := NewStreamTranslator(clientModel)
+						if fbErr := consumeSSE(fbBody, fbTrans); fbErr == nil {
+							trans, frameErr = fbTrans, nil
+						} else {
+							frameErr = fbErr
+						}
+					} else {
+						frameErr = chatErr
+					}
+				}
+			}
+		}
+		if frameErr != nil {
+			return nil, upstreamError(frameErr)
 		}
 	} else {
 		var probe map[string]any
@@ -371,7 +420,7 @@ func consumeSSE(body []byte, trans *StreamTranslator) error {
 			continue
 		}
 		if _, err := trans.Translate(payload); err != nil {
-			return upstreamError(err)
+			return err
 		}
 	}
 	return nil

@@ -20,7 +20,7 @@ const (
 	// PluginName is the display name used by management clients.
 	PluginName = "Xiaoyi OAuth"
 	// Version is the plugin release version.
-	Version = "0.6.0"
+	Version = "0.6.1"
 
 	authFileName = "xiaoyiwork-local.json"
 )
@@ -215,6 +215,12 @@ func (p *Plugin) handleRegister(raw []byte) (any, error) {
 					Type:        pluginapi.ConfigFieldTypeBoolean,
 					Default:     false,
 					Description: "在宿主日志中输出详细排障信息",
+				},
+				{
+					Name:        "auto_fallback",
+					Type:        pluginapi.ConfigFieldTypeBoolean,
+					Default:     false,
+					Description: "GLM-5.3-Flash 返回空错误帧时自动改用 LLM-GLM5.3 重试（可完成任务，但积分消耗更高）",
 				},
 			},
 		},

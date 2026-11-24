@@ -27,7 +27,7 @@ x-request-from: xiaoyiWork
 
 ## 安装
 
-1. 把 `xiaoyiwork-v0.6.0.dll` 放到 `<EasyCLIProxyAPI 目录>\cpa-core\plugins\windows\amd64\`。
+1. 把 `xiaoyiwork-v0.6.1.dll` 放到 `<EasyCLIProxyAPI 目录>\cpa-core\plugins\windows\amd64\`。
 2. 在 `cpa-core\config.yaml` 的 `plugins.configs` 下启用：
 
 ```yaml
@@ -61,6 +61,7 @@ plugins:
 | `route_unprefixed_models` | `true` | 同时路由裸模型 id |
 | `request_timeout_seconds` | `600` | 单请求超时 |
 | `debug` | `false` | 宿主日志详细输出 |
+| `auto_fallback` | `false` | GLM-5.3-Flash 返回空错误帧时，非流式请求自动改用 `LLM_GLM5.3` 重跑一次（积分倍率更高） |
 
 ## 模型与思考强度
 
@@ -92,6 +93,7 @@ plugins:
 - 看到 502「连接小艺Work 本地代理失败」是 0.1.x 本地模式在桌面端关闭时的旧行为；0.2.x 默认云端直连后不再出现。
 - 100% 失败统计可能包含旧版本配合 `request-retry: 200` 产生的重试风暴；修复后新请求正常。
 - 401 `authFailed`：当前 businessCredential 已被新的登录/刷新替换或失效；点一次“开始登录”重新授权即可（云端同一账号同一设备只保留一个有效凭据）。
+- 502「小艺Work 上游返回空错误帧」：`GLM_5.3_FLASH_VE` 在长结构化生成中可能跑到上千个 reasoning 帧后由上游中断（原始帧就是 `data: {"error":{}}`）。开启 `auto_fallback` 后，非流式请求会自动改用 `LLM_GLM5.3` 重跑；流式请求不会中途切换模型。
 - `回调端口 17355 被占用`：旧版本热重载留下的监听；重启一次 ECPA 内核即可，0.6.0 起插件 shutdown 会主动释放。
 
 ## 构建
@@ -99,7 +101,7 @@ plugins:
 ```powershell
 $env:PATH = 'C:\msys64\mingw64\bin;' + $env:PATH
 $env:CGO_ENABLED = '1'; $env:GOOS = 'windows'; $env:GOARCH = 'amd64'; $env:GOAMD64 = 'v1'
-go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o bin/xiaoyiwork-v0.6.0.dll ./cmd/xiaoyiwork-plugin
+go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o bin/xiaoyiwork-v0.6.1.dll ./cmd/xiaoyiwork-plugin
 ```
 
 必须用 `-buildmode=c-shared`；CI 在 Linux 上用 `x86_64-w64-mingw32-gcc` 交叉编译。
