@@ -24,30 +24,10 @@ type Model struct {
 	MaxOutputTokens int
 }
 
-// modelCapabilities holds the published limits of the model families behind
-// the XiaoyiWork deployments. The upstream model catalog API only returns
-// names, descriptions and point multipliers, so these values cannot be fetched
-// at runtime; they follow the public model specs (models.dev) and can be
-// overridden in the client's model settings.
-var modelCapabilities = map[string]struct {
-	Context int
-	Output  int
-}{
-	"AUTO-MODEL":             {Context: 1000000, Output: 131072},
-	"LLM_DEEPSEEKV4_THINK":   {Context: 1000000, Output: 131072},
-	"DEEPSEEK_V4.1_FLASH_VE": {Context: 1048576, Output: 64000},
-	"OPENPANGUV2-PRO":        {Context: 524288, Output: 131072},
-	"LLM_GLM5.3":             {Context: 1048576, Output: 131072},
-	"GLM_5.3_FLASH_VE":       {Context: 1048576, Output: 64000},
-	"MINIMAX_M3.1_FLASH":     {Context: 524288, Output: 131072},
-	"KIMI_K3.1_PRO_VE":       {Context: 1048576, Output: 65536},
-}
-
 func withCapabilities(m Model) Model {
-	if caps, ok := modelCapabilities[strings.ToUpper(m.ID)]; ok {
-		m.ContextWindow = caps.Context
-		m.MaxOutputTokens = caps.Output
-	}
+	caps := Capabilities(m.ID)
+	m.ContextWindow = caps.Context
+	m.MaxOutputTokens = caps.Output
 	return m
 }
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.6.4 (2026-11-26)
+
+- 上下文窗口改为运行时从 **OpenRouter 公开模型目录**解析（与小艺桌面端 `enable_openrouter_model_context_window_tokens` 同源），缓存 6 小时；网络不可用时回退内置表。
+- 修正 MiniMax M3.1 Flash、DeepSeek-V4-Flash 等被低估的窗口：现在 GLM-5.3 / GLM-5.3-Flash / DeepSeek-V4.x / Kimi K3.1 Pro / MiniMax M3.1 Flash 均为 1,048,576；openPangu-2.1-Pro 为 524,288。
+- 小艺远端模型目录接口本身只返回名称/描述/积分倍率，不返回上下文；OpenRouter 是桌面端同款解析来源。
+
 ## v0.6.3 (2026-11-26)
 
 - 模型能力随 `/v1/models` 动态下发：按模型返回上下文窗口与最大输出，不再统一写死 128k。GLM-5.3 / GLM-5.3-Flash / DeepSeek-V4.1-Flash / Kimi K3.1 Pro 为 1,048,576，openPangu-2.1-Pro / MiniMax M3.1 Flash 为 524,288，DeepSeek-V4-Flash 与 Auto-Model 为 1,000,000。
