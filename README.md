@@ -27,7 +27,7 @@ x-request-from: xiaoyiWork
 
 ## 安装
 
-1. 把 `xiaoyiwork-v0.6.2.dll` 放到 `<EasyCLIProxyAPI 目录>\cpa-core\plugins\windows\amd64\`。
+1. 把 `xiaoyiwork-v0.6.3.dll` 放到 `<EasyCLIProxyAPI 目录>\cpa-core\plugins\windows\amd64\`。
 2. 在 `cpa-core\config.yaml` 的 `plugins.configs` 下启用：
 
 ```yaml
@@ -65,18 +65,20 @@ plugins:
 
 ## 模型与思考强度
 
-| 展示名 | 上游 id |
-|---|---|
-| Auto-Model | `Auto-Model` |
-| DeepSeek-V4-Flash | `LLM_DeepSeekV4_Think` |
-| DeepSeek-V4.1-Flash | `DeepSeek_V4.1_Flash_VE` |
-| openPangu-2.1-Pro | `OpenPanguV2-Pro` |
-| GLM-5.3 | `LLM_GLM5.3` |
-| GLM-5.3-Flash | `GLM_5.3_FLASH_VE` |
-| MiniMax M3.1 Flash | `MiniMax_M3.1_Flash` |
-| Kimi K3.1 Pro | `Kimi_K3.1_Pro_VE` |
+| 展示名 | 上游 id | 上下文窗口 | 最大输出 |
+|---|---|---|---|
+| Auto-Model | `Auto-Model` | 1,000,000 | 131,072 |
+| DeepSeek-V4-Flash | `LLM_DeepSeekV4_Think` | 1,000,000 | 131,072 |
+| DeepSeek-V4.1-Flash | `DeepSeek_V4.1_Flash_VE` | 1,048,576 | 64,000 |
+| openPangu-2.1-Pro | `OpenPanguV2-Pro` | 524,288 | 131,072 |
+| GLM-5.3 | `LLM_GLM5.3` | 1,048,576 | 131,072 |
+| GLM-5.3-Flash | `GLM_5.3_FLASH_VE` | 1,048,576 | 64,000 |
+| MiniMax M3.1 Flash | `MiniMax_M3.1_Flash` | 524,288 | 131,072 |
+| Kimi K3.1 Pro | `Kimi_K3.1_Pro_VE` | 1,048,576 | 65,536 |
 
 所有模型都声明了 `low / medium / high` 思考档位并允许关闭；请求里的 `reasoning_effort` 会原样透传给云端。
+
+上下文与输出规格随 `/v1/models` 下发（旧版统一 128k）。小艺远端的模型目录接口只返回名称、描述和积分倍率，不包含上下文，因此这些数值取自对应模型家族的公开规格（models.dev）；如上游另有更严格的限制，可在客户端的模型设置里按模型覆盖。
 
 ## 已验证（2026-11-22）
 
@@ -101,7 +103,7 @@ plugins:
 ```powershell
 $env:PATH = 'C:\msys64\mingw64\bin;' + $env:PATH
 $env:CGO_ENABLED = '1'; $env:GOOS = 'windows'; $env:GOARCH = 'amd64'; $env:GOAMD64 = 'v1'
-go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o bin/xiaoyiwork-v0.6.2.dll ./cmd/xiaoyiwork-plugin
+go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o bin/xiaoyiwork-v0.6.3.dll ./cmd/xiaoyiwork-plugin
 ```
 
 必须用 `-buildmode=c-shared`；CI 在 Linux 上用 `x86_64-w64-mingw32-gcc` 交叉编译。

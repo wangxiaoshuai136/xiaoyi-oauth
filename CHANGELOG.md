@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.6.3 (2026-11-26)
+
+- 模型能力随 `/v1/models` 动态下发：按模型返回上下文窗口与最大输出，不再统一写死 128k。GLM-5.3 / GLM-5.3-Flash / DeepSeek-V4.1-Flash / Kimi K3.1 Pro 为 1,048,576，openPangu-2.1-Pro / MiniMax M3.1 Flash 为 524,288，DeepSeek-V4-Flash 与 Auto-Model 为 1,000,000。
+- 说明：小艺远端模型目录接口只返回名称、描述和积分倍率，不含上下文；这些数值取自模型家族的公开规格（models.dev），客户端模型设置里仍可按模型覆盖。
+
 ## v0.6.2 (2026-11-24)
 
 - 修复**账号备注被刷新/重载覆盖**：插件刷新时合并宿主的 Metadata/Attributes，解析凭据时回填 `note`，重写文件时只更新自己拥有的字段。`note`、`priority`、`headers` 等宿主字段不再丢失。

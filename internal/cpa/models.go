@@ -78,6 +78,14 @@ func (p *Plugin) catalogModels(rules []string) []pluginapi.ModelInfo {
 		if display == "" {
 			display = m.ID
 		}
+		contextWindow := int64(m.ContextWindow)
+		if contextWindow <= 0 {
+			contextWindow = 131072
+		}
+		maxOutput := int64(m.MaxOutputTokens)
+		if maxOutput <= 0 {
+			maxOutput = 8192
+		}
 		out = append(out, pluginapi.ModelInfo{
 			ID:                         cfg.ModelPrefix + m.ID,
 			Name:                       m.ID,
@@ -85,10 +93,10 @@ func (p *Plugin) catalogModels(rules []string) []pluginapi.ModelInfo {
 			Object:                     "model",
 			OwnedBy:                    PluginID,
 			Type:                       "chat",
-			ContextLength:              128000,
-			InputTokenLimit:            128000,
-			OutputTokenLimit:           8192,
-			MaxCompletionTokens:        8192,
+			ContextLength:              contextWindow,
+			InputTokenLimit:            contextWindow,
+			OutputTokenLimit:           maxOutput,
+			MaxCompletionTokens:        maxOutput,
 			SupportedGenerationMethods: []string{"chat.completions"},
 			SupportedInputModalities:   []string{"text"},
 			SupportedOutputModalities:  []string{"text"},

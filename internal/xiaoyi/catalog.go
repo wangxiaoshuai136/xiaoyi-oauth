@@ -18,19 +18,50 @@ type Model struct {
 	Display string
 	// Thinking reports whether the model emits reasoning_content.
 	Thinking bool
+	// ContextWindow is the model's advertised input window in tokens.
+	ContextWindow int
+	// MaxOutputTokens is the model's advertised output limit in tokens.
+	MaxOutputTokens int
+}
+
+// modelCapabilities holds the published limits of the model families behind
+// the XiaoyiWork deployments. The upstream model catalog API only returns
+// names, descriptions and point multipliers, so these values cannot be fetched
+// at runtime; they follow the public model specs (models.dev) and can be
+// overridden in the client's model settings.
+var modelCapabilities = map[string]struct {
+	Context int
+	Output  int
+}{
+	"AUTO-MODEL":             {Context: 1000000, Output: 131072},
+	"LLM_DEEPSEEKV4_THINK":   {Context: 1000000, Output: 131072},
+	"DEEPSEEK_V4.1_FLASH_VE": {Context: 1048576, Output: 64000},
+	"OPENPANGUV2-PRO":        {Context: 524288, Output: 131072},
+	"LLM_GLM5.3":             {Context: 1048576, Output: 131072},
+	"GLM_5.3_FLASH_VE":       {Context: 1048576, Output: 64000},
+	"MINIMAX_M3.1_FLASH":     {Context: 524288, Output: 131072},
+	"KIMI_K3.1_PRO_VE":       {Context: 1048576, Output: 65536},
+}
+
+func withCapabilities(m Model) Model {
+	if caps, ok := modelCapabilities[strings.ToUpper(m.ID)]; ok {
+		m.ContextWindow = caps.Context
+		m.MaxOutputTokens = caps.Output
+	}
+	return m
 }
 
 // FallbackCatalog mirrors the catalog observed for XiaoyiWork 0.7.7.1.
 func FallbackCatalog() []Model {
 	return []Model{
-		{ID: "Auto-Model", Display: "Auto-Model"},
-		{ID: "LLM_DeepSeekV4_Think", Display: "DeepSeek-V4-Flash", Thinking: true},
-		{ID: "DeepSeek_V4.1_Flash_VE", Display: "DeepSeek-V4.1-Flash"},
-		{ID: "OpenPanguV2-Pro", Display: "openPangu-2.1-Pro"},
-		{ID: "LLM_GLM5.3", Display: "GLM-5.3"},
-		{ID: "GLM_5.3_FLASH_VE", Display: "GLM-5.3-Flash"},
-		{ID: "MiniMax_M3.1_Flash", Display: "MiniMax M3.1 Flash"},
-		{ID: "Kimi_K3.1_Pro_VE", Display: "Kimi K3.1 Pro"},
+		withCapabilities(Model{ID: "Auto-Model", Display: "Auto-Model"}),
+		withCapabilities(Model{ID: "LLM_DeepSeekV4_Think", Display: "DeepSeek-V4-Flash", Thinking: true}),
+		withCapabilities(Model{ID: "DeepSeek_V4.1_Flash_VE", Display: "DeepSeek-V4.1-Flash"}),
+		withCapabilities(Model{ID: "OpenPanguV2-Pro", Display: "openPangu-2.1-Pro"}),
+		withCapabilities(Model{ID: "LLM_GLM5.3", Display: "GLM-5.3"}),
+		withCapabilities(Model{ID: "GLM_5.3_FLASH_VE", Display: "GLM-5.3-Flash"}),
+		withCapabilities(Model{ID: "MiniMax_M3.1_Flash", Display: "MiniMax M3.1 Flash"}),
+		withCapabilities(Model{ID: "Kimi_K3.1_Pro_VE", Display: "Kimi K3.1 Pro"}),
 	}
 }
 
@@ -120,7 +151,7 @@ func loadModelsJSON() []Model {
 			if display == "" {
 				display = id
 			}
-			out = append(out, Model{ID: id, Display: display, Thinking: looksThinking(id)})
+			out = append(out, withCapabilities(Model{ID: id, Display: display, Thinking: looksThinking(id)}))
 		}
 		if len(out) > 0 {
 			return out
