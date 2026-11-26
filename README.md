@@ -66,7 +66,7 @@ Xiaoyi OAuth 给 CLIProxyAPI（CPA）增加 `xiaoyiwork` 供应商：用华为�
 
 ## 安装
 
-1. 把 `xiaoyiwork-v0.6.6.dll` 放到 `<EasyCLIProxyAPI 目录>\cpa-core\plugins\windows\amd64\`。
+1. 把 `xiaoyiwork-v0.6.7.dll` 放到 `<EasyCLIProxyAPI 目录>\cpa-core\plugins\windows\amd64\`。
 2. 在 `cpa-core\config.yaml` 的 `plugins.configs` 下启用：
 
 ```yaml
@@ -117,7 +117,7 @@ curl "http://127.0.0.1:8317/v1/models?client_version=0.171.0-alpha.13" \
 - **502「上游返回空错误帧」**：`GLM-5.3-Flash` 在长结构化生成中可能跑到上千个 reasoning 帧后被上游中断，原始帧为 `data: {"error":{}}`。开启 `auto_fallback` 后非流式请求会自动改用 `LLM-GLM5.3`；流式不会中途换模型。
 - **502 `11115 server inner` / `11111 Cp server response error`**：上游模型侧错误，通常与并发或模型状态有关；`request-retry` 过高会把一次失败放大成大量 502 记录，建议 3–5。
 - **`回调端口 17355 被占用`**：旧版本热重载留下的监听；重启一次 ECPA 内核即可，0.6.0 起插件 shutdown 会主动释放。
-- **登录窗口一闪而过**：0.6.6 起已修复（Chrome 启动器提前退出被误判为窗口关闭）。
+- **登录窗口一闪而过**：0.6.7 起已修复（Chrome 启动器提前退出被误判为窗口关闭）。
 - **模型设置显示 128k 默认模板**：0.6.4 起随 `/v1/models` 下发真实上下文；重新打开模型设置即可。
 
 ## 开发
@@ -128,7 +128,7 @@ go vet ./internal/...
 
 $env:PATH = 'C:\msys64\mingw64\bin;' + $env:PATH
 $env:CGO_ENABLED = '1'; $env:GOOS = 'windows'; $env:GOARCH = 'amd64'; $env:GOAMD64 = 'v1'
-go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o bin/xiaoyiwork-v0.6.6.dll ./cmd/xiaoyiwork-plugin
+go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o bin/xiaoyiwork-v0.6.7.dll ./cmd/xiaoyiwork-plugin
 ```
 
 必须使用 `-buildmode=c-shared`；CI 在 Linux 上用 `x86_64-w64-mingw32-gcc` 交叉编译。
@@ -137,7 +137,7 @@ go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o bin/xiaoyiwork-v0.6.6
 
 ```powershell
 go build -o bin/hostsim.exe ./cmd/hostsim
-.\bin\hostsim.exe -dll .\bin\xiaoyiwork-v0.6.6.dll -stream=false -prompt ping
+.\bin\hostsim.exe -dll .\bin\xiaoyiwork-v0.6.7.dll -stream=false -prompt ping
 ```
 
 ### 项目结构

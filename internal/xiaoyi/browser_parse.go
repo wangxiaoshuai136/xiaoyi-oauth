@@ -2,7 +2,6 @@ package xiaoyi
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 )
 
@@ -31,7 +30,11 @@ func commandExecutable(command string) (string, error) {
 }
 
 func isChromiumBrowser(path string) bool {
-	switch strings.ToLower(filepath.Base(path)) {
+	name := path
+	if index := strings.LastIndexAny(name, `\/`); index >= 0 {
+		name = name[index+1:]
+	}
+	switch strings.ToLower(name) {
 	case "msedge.exe", "chrome.exe", "brave.exe", "vivaldi.exe", "opera.exe", "thorium.exe":
 		return true
 	default:

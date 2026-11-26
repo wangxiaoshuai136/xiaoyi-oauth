@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.6.7 (2026-11-27)
+
+- 修复 CI 在 Linux 上判断浏览器文件名的问题（`C:\...\msedge.exe` 被当成完整文件名），Windows 行为与 0.6.6 相同。
+- 0.6.6 的 Release 因该测试失败未发布；功能以 0.6.7 为准。
+
 ## v0.6.6 (2026-11-27)
 
 - 登录窗口改用**系统默认浏览器**，不再写死 Edge：读取 Windows `http` 关联的 ProgId 与打开命令；Chrome/Edge/Brave/Vivaldi/Opera 等 Chromium 系仍用临时 profile 打开独立窗口，Firefox 等其他浏览器交给系统默认处理器打开。
