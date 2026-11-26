@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$DllPath = (Join-Path $PSScriptRoot '..\bin\xiaoyiwork-v0.6.4.dll'),
+    [string]$DllPath = (Join-Path $PSScriptRoot '..\bin\xiaoyiwork-v0.6.5.dll'),
     [string]$PluginDir = 'D:\WenPaul\Documents\路由网关\EasyCLIProxyAPI\cpa-core\plugins\windows\amd64'
 )
 

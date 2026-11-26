@@ -19,8 +19,11 @@ const (
 	PluginID = "xiaoyiwork"
 	// PluginName is the display name used by management clients.
 	PluginName = "Xiaoyi OAuth"
+	// AuthEntryName is the OAuth provider entry shown on the sign-in card. The
+	// UI appends " OAuth" to it, so it must not repeat the suffix.
+	AuthEntryName = "Xiaoyi"
 	// Version is the plugin release version.
-	Version = "0.6.4"
+	Version = "0.6.5"
 
 	authFileName = "xiaoyiwork-local.json"
 )

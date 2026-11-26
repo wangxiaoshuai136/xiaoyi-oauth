@@ -78,7 +78,7 @@ func (p *Plugin) handleAuthIdentifier() (any, error) {
 		Identifiers:         []string{PluginID},
 		CredentialProviders: []string{PluginID},
 		Entries: []pluginapi.AuthProviderEntry{
-			{Identifier: PluginID, Name: PluginName},
+			{Identifier: PluginID, Name: AuthEntryName},
 		},
 	}, nil
 }

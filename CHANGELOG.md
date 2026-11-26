@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.6.5 (2026-11-27)
+
+- 修复 OAuth 卡片标题重复：插件显示名仍是 `Xiaoyi OAuth`，但 OAuth 入口名改为 `Xiaoyi`，界面拼接后显示为 **Xiaoyi OAuth**，不再出现 “Xiaoyi OAuth OAuth”。
+- 账号标签仍为 `Xiaoyi OAuth (温保禄)`。
+
 ## v0.6.4 (2026-11-26)
 
 - 上下文窗口改为运行时从 **OpenRouter 公开模型目录**解析（与小艺桌面端 `enable_openrouter_model_context_window_tokens` 同源），缓存 6 小时；网络不可用时回退内置表。
