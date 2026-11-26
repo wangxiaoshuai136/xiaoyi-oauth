@@ -11,7 +11,7 @@ func LaunchLoginBrowser(string) (*LoginBrowser, error) {
 	return nil, fmt.Errorf("独立登录浏览器仅支持 Windows")
 }
 
-func terminateBrowser(proc *os.Process) {
+func terminateBrowser(proc *os.Process, _ string) {
 	if proc == nil {
 		return
 	}

@@ -62,6 +62,9 @@ func (p *Plugin) handleAuthLoginStart(raw []byte) (any, error) {
 	message := "用华为账号登录；二维码/短信/密码均可使用"
 	if browser, err := xiaoyi.LaunchLoginBrowser(authURL); err == nil {
 		session.browser = browser
+		if browser.Mode != "" {
+			p.log("info", "登录窗口: "+browser.Mode, nil)
+		}
 		launchURL = fmt.Sprintf("http://127.0.0.1:%d/v0/resource/plugins/%s/status?state=%s", xiaoyi.CallbackPort, PluginID, state)
 		message = "已打开独立登录窗口；二维码/短信/密码均可使用"
 	} else {

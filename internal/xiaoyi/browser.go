@@ -11,6 +11,8 @@ type LoginBrowser struct {
 	mu         sync.Mutex
 	Proc       *os.Process
 	ProfileDir string
+	// Mode describes how the sign-in page was opened (chromium/default).
+	Mode string
 }
 
 // Close stops the browser and removes its throwaway profile. It is safe to
@@ -26,7 +28,7 @@ func (b *LoginBrowser) Close() {
 	b.ProfileDir = ""
 	b.mu.Unlock()
 	if proc != nil {
-		terminateBrowser(proc)
+		terminateBrowser(proc, profile)
 	}
 	if profile != "" {
 		removeProfile(profile)

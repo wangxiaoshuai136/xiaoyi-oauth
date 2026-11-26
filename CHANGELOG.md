@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.6.6 (2026-11-27)
+
+- 登录窗口改用**系统默认浏览器**，不再写死 Edge：读取 Windows `http` 关联的 ProgId 与打开命令；Chrome/Edge/Brave/Vivaldi/Opera 等 Chromium 系仍用临时 profile 打开独立窗口，Firefox 等其他浏览器交给系统默认处理器打开。
+- OAuth 流程不变：仍返回本地登录入口、由插件拉起窗口、回调到 `127.0.0.1:17355`。
+- 修复 Chrome 启动器提前退出被误判为“窗口已关闭”，导致登录窗口 2 秒后被自动杀掉；现在只在登录完成、失败或超时时关闭，并按临时 profile 精确清理残留进程。
+
 ## v0.6.5 (2026-11-27)
 
 - 修复 OAuth 卡片标题重复：插件显示名仍是 `Xiaoyi OAuth`，但 OAuth 入口名改为 `Xiaoyi`，界面拼接后显示为 **Xiaoyi OAuth**，不再出现 “Xiaoyi OAuth OAuth”。

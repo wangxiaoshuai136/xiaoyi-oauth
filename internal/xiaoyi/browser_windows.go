@@ -11,16 +11,33 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 )
 
-// LaunchLoginBrowser starts an isolated Edge/Chrome window owned by the plugin.
-// Each call uses a fresh profile, so several Huawei accounts can be signed in
-// without touching the user's daily browser session.
+var (
+	shell32           = syscall.NewLazyDLL("shell32.dll")
+	procShellExecuteW = shell32.NewProc("ShellExecuteW")
+)
+
+// LaunchLoginBrowser opens the sign-in page in the user's default browser. For
+// Chromium-based defaults it keeps the plugin-owned isolated window (fresh
+// profile); other browsers are opened through the system default handler.
 func LaunchLoginBrowser(rawURL string) (*LoginBrowser, error) {
-	browser, err := findBrowser()
-	if err != nil {
+	browser, err := defaultBrowserExecutable()
+	if err == nil && isChromiumBrowser(browser) {
+		return launchIsolatedChromium(browser, rawURL)
+	}
+	if err := openWithDefaultBrowser(rawURL); err != nil {
 		return nil, err
 	}
+	mode := "default"
+	if err != nil {
+		mode = "default (" + err.Error() + ")"
+	}
+	return &LoginBrowser{Mode: mode}, nil
+}
+
+func launchIsolatedChromium(browser, rawURL string) (*LoginBrowser, error) {
 	cleanupStaleProfiles()
 	profile, err := os.MkdirTemp("", "xiaoyi-oauth-profile-*")
 	if err != nil {
@@ -40,24 +57,57 @@ func LaunchLoginBrowser(rawURL string) (*LoginBrowser, error) {
 		_ = os.RemoveAll(profile)
 		return nil, fmt.Errorf("启动登录浏览器失败: %w", err)
 	}
-	instance := &LoginBrowser{Proc: cmd.Process, ProfileDir: profile}
+	instance := &LoginBrowser{Proc: cmd.Process, ProfileDir: profile, Mode: "chromium:" + browser}
 	go func() {
 		_ = cmd.Wait()
-		// The window is gone (login finished or the user closed it): drop the
-		// throwaway profile once the remaining child processes have exited.
-		time.Sleep(2 * time.Second)
-		instance.Close()
+		// Chromium often exits its launcher immediately and keeps the real
+		// browser alive under a child process, so Wait() is not a reliable
+		// "window closed" signal. Cleanup happens when the login completes,
+		// fails or times out; terminateBrowser also matches the profile.
 	}()
 	return instance, nil
 }
 
-// terminateBrowser stops a browser and its renderer/utility children. Killing
-// only the launcher leaves Edge children alive and keeps the profile locked.
-func terminateBrowser(proc *os.Process) {
-	if proc == nil {
+// openWithDefaultBrowser hands the URL to the shell so Windows uses the
+// user's default browser instead of a hard-coded one.
+func openWithDefaultBrowser(rawURL string) error {
+	verb, err := syscall.UTF16PtrFromString("open")
+	if err != nil {
+		return err
+	}
+	target, err := syscall.UTF16PtrFromString(rawURL)
+	if err != nil {
+		return err
+	}
+	const swShowNormal = 1
+	ret, _, callErr := procShellExecuteW.Call(
+		0,
+		uintptr(unsafe.Pointer(verb)),
+		uintptr(unsafe.Pointer(target)),
+		0,
+		0,
+		swShowNormal,
+	)
+	if ret <= 32 {
+		return fmt.Errorf("打开默认浏览器失败（ShellExecute=%d）: %v", ret, callErr)
+	}
+	return nil
+}
+
+// terminateBrowser stops a browser and its renderer/utility children. Some
+// Chromium builds exit their launcher immediately and reparent the real
+// processes, so killing the recorded PID is not enough; every process whose
+// command line carries the throwaway profile directory is stopped as well.
+func terminateBrowser(proc *os.Process, profile string) {
+	if proc != nil {
+		_ = exec.Command("taskkill", "/PID", strconv.Itoa(proc.Pid), "/T", "/F").Run()
+	}
+	if profile == "" {
 		return
 	}
-	_ = exec.Command("taskkill", "/PID", strconv.Itoa(proc.Pid), "/T", "/F").Run()
+	marker := filepath.Base(profile)
+	script := `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*` + marker + `*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`
+	_ = exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script).Run()
 }
 
 // cleanupStaleProfiles removes leftover profiles from earlier runs. Anything
@@ -80,22 +130,28 @@ func cleanupStaleProfiles() {
 	}
 }
 
-func findBrowser() (string, error) {
-	candidates := []string{
-		filepath.Join(os.Getenv("ProgramFiles(x86)"), "Microsoft", "Edge", "Application", "msedge.exe"),
-		filepath.Join(os.Getenv("ProgramFiles"), "Microsoft", "Edge", "Application", "msedge.exe"),
-		filepath.Join(os.Getenv("LocalAppData"), "Microsoft", "Edge", "Application", "msedge.exe"),
-		filepath.Join(os.Getenv("ProgramFiles"), "Google", "Chrome", "Application", "chrome.exe"),
-		filepath.Join(os.Getenv("ProgramFiles(x86)"), "Google", "Chrome", "Application", "chrome.exe"),
-		filepath.Join(os.Getenv("LocalAppData"), "Google", "Chrome", "Application", "chrome.exe"),
+// defaultBrowserExecutable resolves the executable behind the user's http URL
+// association. Empty string means the association could not be resolved.
+func defaultBrowserExecutable() (string, error) {
+	progID, err := readRegistryString(
+		`Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice`,
+		"ProgId",
+	)
+	if err != nil || strings.TrimSpace(progID) == "" {
+		return "", fmt.Errorf("读取默认浏览器失败: %w", err)
 	}
-	for _, candidate := range candidates {
-		if candidate == "" {
-			continue
-		}
-		if stat, err := os.Stat(candidate); err == nil && !stat.IsDir() {
-			return candidate, nil
-		}
+	command, err := readBrowserCommand(strings.TrimSpace(progID))
+	if err != nil || strings.TrimSpace(command) == "" {
+		return "", fmt.Errorf("读取默认浏览器命令失败: %w", err)
 	}
-	return "", fmt.Errorf("未找到 Edge 或 Chrome，无法拉起独立登录窗口")
+	return commandExecutable(command)
+}
+
+// readBrowserCommand reads the shell open command, preferring the per-user
+// override and falling back to the machine-wide HKCR association.
+func readBrowserCommand(progID string) (string, error) {
+	if command, err := readRegistryString(`Software\Classes\`+progID+`\shell\open\command`, ""); err == nil && command != "" {
+		return command, nil
+	}
+	return readRegistryStringRoot(syscall.HKEY_CLASSES_ROOT, progID+`\shell\open\command`, "")
 }
