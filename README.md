@@ -26,7 +26,7 @@ Xiaoyi OAuth 给 CLIProxyAPI（CPA）增加 `xiaoyiwork` 供应商：用华为�
 ## 特性
 
 - **纯账号登录**：华为账号 OAuth（PKCE），支持扫码、短信、密码；无需小艺Work 桌面端。
-- **默认浏览器 + 独立窗口**：读取 Windows 默认浏览器；Chrome/Edge/Brave/Vivaldi/Opera 等 Chromium 系使用全新临时 profile，不碰日常浏览器，也不复用登录态，可连续登录多个华为账号。
+- **遵循 ECPA 浏览器设置**：`auth.login.start` 只返回华为授权地址，由 ECPA 按其设置（默认或用户选定浏览器）打开；插件不自行启动浏览器。
 - **云端直连**：默认走 `hag-drcn.op.dbankcloud.com`，无需本地 19693 代理。
 - **模型能力下发**：上下文窗口与最大输出随 `/v1/models` 下发，来源为 OpenRouter 公开模型目录（与小艺桌面端同源），6 小时缓存，失败回退内置表。
 - **标准协议**：OpenAI Chat Completions 输入/输出；流式补 `object`/`created`/`index`/唯一 `id`、合并 `tool_calls`、结束补 usage 与 `[DONE]`；非流式在插件内聚合；`/v1/responses` 由内核转换。
@@ -38,7 +38,7 @@ Xiaoyi OAuth 给 CLIProxyAPI（CPA）增加 `xiaoyiwork` 供应商：用华为�
 ## 登录与凭据
 
 1. 在 ECPA 凭据页点“开始登录”。
-2. 插件拉起系统默认浏览器的独立登录窗口（Chromium 系使用临时 profile），打开华为账号页。
+2. ECPA 按浏览器设置打开华为账号页，选择扫码、短信或密码登录。
 3. 扫码 / 短信 / 密码完成登录，浏览器回调到 `http://127.0.0.1:17355/auth/callback`。
 4. 插件用授权码换取华为 token，创建 businessCredential，并立即写入 `oauth/xiaoyiwork-<uid>.json`。
 5. 账号卡显示 `Xiaoyi OAuth (昵称)`，无需等 GUI 轮询。
@@ -47,7 +47,6 @@ Xiaoyi OAuth 给 CLIProxyAPI（CPA）增加 `xiaoyiwork` 供应商：用华为�
 
 - 小艺云端同一账号同一设备只保留一个有效凭据。若在小艺Work 桌面端重新登录，插件保存的凭据会被顶掉，表现为 401 `authFailed`，需要回 ECPA 重新点“开始登录”。
 - 凭据刷新失败（例如 `clientId is invalid`）时同样需要重新登录；登录后额度与聊天立即恢复。
-- 默认浏览器不是 Chromium（例如 Firefox）时，插件交给系统默认处理器打开，无法使用临时 profile 隔离。
 
 ## 支持的模型
 
@@ -66,7 +65,7 @@ Xiaoyi OAuth 给 CLIProxyAPI（CPA）增加 `xiaoyiwork` 供应商：用华为�
 
 ## 安装
 
-1. 把 `xiaoyiwork-v0.6.7.dll` 放到 `<EasyCLIProxyAPI 目录>\cpa-core\plugins\windows\amd64\`。
+1. 把 `xiaoyiwork-v0.6.8.dll` 放到 `<EasyCLIProxyAPI 目录>\cpa-core\plugins\windows\amd64\`。
 2. 在 `cpa-core\config.yaml` 的 `plugins.configs` 下启用：
 
 ```yaml
@@ -117,7 +116,6 @@ curl "http://127.0.0.1:8317/v1/models?client_version=0.171.0-alpha.13" \
 - **502「上游返回空错误帧」**：`GLM-5.3-Flash` 在长结构化生成中可能跑到上千个 reasoning 帧后被上游中断，原始帧为 `data: {"error":{}}`。开启 `auto_fallback` 后非流式请求会自动改用 `LLM-GLM5.3`；流式不会中途换模型。
 - **502 `11115 server inner` / `11111 Cp server response error`**：上游模型侧错误，通常与并发或模型状态有关；`request-retry` 过高会把一次失败放大成大量 502 记录，建议 3–5。
 - **`回调端口 17355 被占用`**：旧版本热重载留下的监听；重启一次 ECPA 内核即可，0.6.0 起插件 shutdown 会主动释放。
-- **登录窗口一闪而过**：0.6.7 起已修复（Chrome 启动器提前退出被误判为窗口关闭）。
 - **模型设置显示 128k 默认模板**：0.6.4 起随 `/v1/models` 下发真实上下文；重新打开模型设置即可。
 
 ## 开发
@@ -128,7 +126,7 @@ go vet ./internal/...
 
 $env:PATH = 'C:\msys64\mingw64\bin;' + $env:PATH
 $env:CGO_ENABLED = '1'; $env:GOOS = 'windows'; $env:GOARCH = 'amd64'; $env:GOAMD64 = 'v1'
-go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o bin/xiaoyiwork-v0.6.7.dll ./cmd/xiaoyiwork-plugin
+go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o bin/xiaoyiwork-v0.6.8.dll ./cmd/xiaoyiwork-plugin
 ```
 
 必须使用 `-buildmode=c-shared`；CI 在 Linux 上用 `x86_64-w64-mingw32-gcc` 交叉编译。
@@ -137,7 +135,7 @@ go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o bin/xiaoyiwork-v0.6.7
 
 ```powershell
 go build -o bin/hostsim.exe ./cmd/hostsim
-.\bin\hostsim.exe -dll .\bin\xiaoyiwork-v0.6.7.dll -stream=false -prompt ping
+.\bin\hostsim.exe -dll .\bin\xiaoyiwork-v0.6.8.dll -stream=false -prompt ping
 ```
 
 ### 项目结构

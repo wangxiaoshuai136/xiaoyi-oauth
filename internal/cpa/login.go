@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"html"
 	"net"
 	"net/http"
 	"strings"
@@ -23,8 +22,6 @@ type oauthSession struct {
 	done     chan struct{}
 	payload  authFilePayload
 	err      error
-	browser  *xiaoyi.LoginBrowser
-	authURL  string
 }
 
 func (p *Plugin) handleAuthLoginStart(raw []byte) (any, error) {
@@ -57,25 +54,12 @@ func (p *Plugin) handleAuthLoginStart(raw []byte) (any, error) {
 	p.loginMu.Unlock()
 
 	authURL := xiaoyi.AuthorizeURL(state, challenge)
-	session.authURL = authURL
-	launchURL := authURL
-	message := "用华为账号登录；二维码/短信/密码均可使用"
-	if browser, err := xiaoyi.LaunchLoginBrowser(authURL); err == nil {
-		session.browser = browser
-		if browser.Mode != "" {
-			p.log("info", "登录窗口: "+browser.Mode, nil)
-		}
-		launchURL = fmt.Sprintf("http://127.0.0.1:%d/v0/resource/plugins/%s/status?state=%s", xiaoyi.CallbackPort, PluginID, state)
-		message = "已打开独立登录窗口；二维码/短信/密码均可使用"
-	} else {
-		p.log("warn", "无法打开独立登录窗口，改由 ECPA 浏览器打开: "+err.Error(), nil)
-	}
 	return pluginapi.AuthLoginStartResponse{
 		Provider:  PluginID,
-		URL:       launchURL,
+		URL:       authURL,
 		State:     state,
 		ExpiresAt: session.expires,
-		Metadata:  map[string]any{"message": message},
+		Metadata:  map[string]any{"message": "由 ECPA 按浏览器设置打开华为账号页；二维码/短信/密码均可使用"},
 	}, nil
 }
 
@@ -91,7 +75,6 @@ func (p *Plugin) ensureLoginServer() error {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc(xiaoyi.CallbackPath, p.handleOAuthCallback)
-	mux.HandleFunc("/v0/resource/plugins/"+PluginID+"/status", p.handleLoginStatusPage)
 	server := &http.Server{Handler: mux}
 	p.loginServer = server
 	go func() { _ = server.Serve(ln) }()
@@ -189,10 +172,6 @@ func (p *Plugin) completeSession(ctx context.Context, session *oauthSession, cod
 	default:
 		close(session.done)
 	}
-	go func() {
-		time.Sleep(2 * time.Second)
-		session.browser.Close()
-	}()
 	return nil
 }
 
@@ -204,10 +183,6 @@ func (p *Plugin) failSession(state string, err error) {
 		return
 	}
 	session.err = err
-	go func() {
-		time.Sleep(2 * time.Second)
-		session.browser.Close()
-	}()
 	select {
 	case <-session.done:
 	default:
@@ -257,30 +232,10 @@ func (p *Plugin) handleAuthLoginPoll(raw []byte) (any, error) {
 		}, nil
 	default:
 		if time.Now().After(session.expires) {
-			session.browser.Close()
 			return pluginapi.AuthLoginPollResponse{Status: pluginapi.AuthLoginStatusError, Message: "登录超时，请重试"}, nil
 		}
 		return pluginapi.AuthLoginPollResponse{Status: pluginapi.AuthLoginStatusPending, Message: "等待华为账号登录完成…"}, nil
 	}
-}
-
-func (p *Plugin) handleLoginStatusPage(w http.ResponseWriter, r *http.Request) {
-	state := r.URL.Query().Get("state")
-	p.loginMu.Lock()
-	session := p.loginSessions[state]
-	p.loginMu.Unlock()
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	if session == nil {
-		_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8"><body style="font:16px system-ui;background:#0f1115;color:#e8eaf0;display:grid;place-items:center;height:100vh"><div><h2>登录会话已过期</h2><p>请回到 ECPA 重新点“开始登录”。</p></div></body>`))
-		return
-	}
-	if sessionDone(session) {
-		_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8"><body style="font:16px system-ui;background:#0f1115;color:#e8eaf0;display:grid;place-items:center;height:100vh"><div><h2>登录已完成</h2><p>可以关闭这个窗口，回到 ECPA。</p></div></body>`))
-		return
-	}
-	escaped := html.EscapeString(session.authURL)
-	_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=` + escaped + `"><body style="font:16px system-ui;background:#0f1115;color:#e8eaf0;display:grid;place-items:center;height:100vh"><div><h2>正在打开华为账号登录…</h2><p>如果没有自动跳转，<a style="color:#7cc4ff" href="` + escaped + `">点这里</a>。</p></div></body>`))
 }
 
 func sessionDone(session *oauthSession) bool {
