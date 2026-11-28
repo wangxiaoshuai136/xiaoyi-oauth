@@ -475,5 +475,11 @@ func upstreamError(err error) *pluginabi.Error {
 			return pluginabi.NewError("xiaoyiwork_upstream_error", up.Error(), http.StatusBadGateway)
 		}
 	}
+	var frameErr *FrameError
+	if errors.As(err, &frameErr) && frameErr.QuotaExhausted() {
+		e := pluginabi.NewError("xiaoyiwork_quota_exhausted", frameErr.Error(), http.StatusPaymentRequired)
+		e.Retryable = false
+		return e
+	}
 	return pluginabi.NewError("xiaoyiwork_upstream_error", err.Error(), http.StatusBadGateway)
 }

@@ -2,8 +2,26 @@ package cpa
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
+
+func TestQuotaExhaustedFrame(t *testing.T) {
+	frame := &FrameError{Code: "111110", Message: "用户权益校验失败"}
+	if !frame.QuotaExhausted() {
+		t.Fatal("111110 must be treated as quota exhaustion")
+	}
+	if !strings.Contains(frame.Error(), "积分") {
+		t.Fatalf("message should mention points: %s", frame.Error())
+	}
+	mapped := upstreamError(frame)
+	if mapped == nil || mapped.Code != "xiaoyiwork_quota_exhausted" {
+		t.Fatalf("unexpected mapping: %#v", mapped)
+	}
+	if mapped.HTTPStatus != 402 || mapped.Retryable {
+		t.Fatalf("quota errors must be 402 and non-retryable: %#v", mapped)
+	}
+}
 
 func TestFrameErrorEmpty(t *testing.T) {
 	empty := &FrameError{}

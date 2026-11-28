@@ -67,9 +67,18 @@ func (e *FrameError) Empty() bool {
 	return strings.TrimSpace(e.Code) == "" && strings.TrimSpace(e.Message) == ""
 }
 
+// QuotaExhausted reports the Xiaoyi entitlement/points rejection. The upstream
+// phrases it as a generic "用户权益校验失败", so map it explicitly.
+func (e *FrameError) QuotaExhausted() bool {
+	return strings.TrimSpace(e.Code) == "111110"
+}
+
 func (e *FrameError) Error() string {
 	if e.Empty() {
 		return "小艺Work 上游返回空错误帧（无 code/message，模型侧中断）"
+	}
+	if e.QuotaExhausted() {
+		return "小艺账号积分/权益不足（111110）：积分可能已耗尽，请充值或等待额度刷新后再试"
 	}
 	return fmt.Sprintf("小艺Work 上游错误 %s: %s", e.Code, e.Message)
 }
