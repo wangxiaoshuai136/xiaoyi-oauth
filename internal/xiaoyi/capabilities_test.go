@@ -56,3 +56,24 @@ func TestCapabilitiesPrefersOpenRouter(t *testing.T) {
 		t.Fatalf("unexpected normalization: %s", got)
 	}
 }
+
+func TestNormalizeEffort(t *testing.T) {
+	cases := []struct {
+		model, in, want string
+		changed         bool
+	}{
+		{"DeepSeek_V4.1_Flash_VE", "medium", "high", true},
+		{"GLM_5.3_FLASH_VE", "medium", "high", true},
+		{"MiniMax_M3.1_Flash", "medium", "medium", false},
+		{"LLM_DeepSeekV4_Think", "xhigh", "xhigh", false},
+		{"GLM_5.3_FLASH_VE", "none", "low", true},
+		{"Kimi_K3.1_Pro_VE", "none", "none", false},
+		{"DeepSeek_V4.1_Flash_VE", "max", "max", false},
+	}
+	for _, c := range cases {
+		got, changed := NormalizeEffort(c.model, c.in)
+		if got != c.want || changed != c.changed {
+			t.Fatalf("NormalizeEffort(%s,%s) = %q,%v; want %q,%v", c.model, c.in, got, changed, c.want, c.changed)
+		}
+	}
+}

@@ -379,6 +379,16 @@ func (p *Plugin) prepareRequest(req rpcExecutorRequest) (upstreamModel, clientMo
 	}
 	doc["model"] = model.ID
 	doc["stream"] = true
+	if effort, ok := doc["reasoning_effort"].(string); ok {
+		if strings.TrimSpace(effort) == "" {
+			delete(doc, "reasoning_effort")
+		} else if mapped, changed := xiaoyi.NormalizeEffort(model.ID, effort); changed {
+			doc["reasoning_effort"] = mapped
+			if cfg.Debug {
+				p.log("debug", "reasoning_effort "+effort+" -> "+mapped, nil)
+			}
+		}
+	}
 	for _, key := range unsupportedParams {
 		delete(doc, key)
 	}

@@ -86,6 +86,10 @@ func (p *Plugin) catalogModels(rules []string) []pluginapi.ModelInfo {
 		if maxOutput <= 0 {
 			maxOutput = 8192
 		}
+		levels := m.ThinkingLevels
+		if len(levels) == 0 {
+			levels = []string{"low", "medium", "high"}
+		}
 		out = append(out, pluginapi.ModelInfo{
 			ID:                         cfg.ModelPrefix + m.ID,
 			Name:                       m.ID,
@@ -101,9 +105,9 @@ func (p *Plugin) catalogModels(rules []string) []pluginapi.ModelInfo {
 			SupportedInputModalities:   []string{"text"},
 			SupportedOutputModalities:  []string{"text"},
 			Thinking: &pluginapi.ThinkingSupport{
-				ZeroAllowed:    true,
+				ZeroAllowed:    m.ZeroAllowed,
 				DynamicAllowed: true,
-				Levels:         []string{"low", "medium", "high"},
+				Levels:         levels,
 			},
 		})
 	}

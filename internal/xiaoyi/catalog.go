@@ -22,12 +22,18 @@ type Model struct {
 	ContextWindow int
 	// MaxOutputTokens is the model's advertised output limit in tokens.
 	MaxOutputTokens int
+	// ThinkingLevels lists the supported reasoning efforts, ascending.
+	ThinkingLevels []string
+	// ZeroAllowed reports whether reasoning can be disabled.
+	ZeroAllowed bool
 }
 
 func withCapabilities(m Model) Model {
 	caps := Capabilities(m.ID)
 	m.ContextWindow = caps.Context
 	m.MaxOutputTokens = caps.Output
+	m.ThinkingLevels = caps.Levels
+	m.ZeroAllowed = caps.ZeroAllowed
 	return m
 }
 

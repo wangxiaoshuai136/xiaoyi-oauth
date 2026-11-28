@@ -50,22 +50,24 @@ Xiaoyi OAuth 给 CLIProxyAPI（CPA）增加 `xiaoyiwork` 供应商：用华为�
 
 ## 支持的模型
 
-| 展示名 | 上游 id | 上下文窗口 | 最大输出 |
-|---|---|---:|---:|
-| Auto-Model | `Auto-Model` | 1,048,576 | 131,072 |
-| DeepSeek-V4-Flash | `LLM_DeepSeekV4_Think` | 1,048,576 | 393,216 |
-| DeepSeek-V4.1-Flash | `DeepSeek_V4.1_Flash_VE` | 1,048,576 | 393,216 |
-| openPangu-2.1-Pro | `OpenPanguV2-Pro` | 524,288 | 131,072 |
-| GLM-5.3 | `LLM_GLM5.3` | 1,048,576 | 943,718 |
-| GLM-5.3-Flash | `GLM_5.3_FLASH_VE` | 1,048,576 | 943,718 |
-| MiniMax M3.1 Flash | `MiniMax_M3.1_Flash` | 1,048,576 | 524,288 |
-| Kimi K3.1 Pro | `Kimi_K3.1_Pro_VE` | 1,048,576 | 943,718 |
+| 展示名 | 上游 id | 上下文窗口 | 最大输出 | 思考档位 |
+|---|---|---:|---:|---|
+| Auto-Model | `Auto-Model` | 1,048,576 | 131,072 | low / medium / high / max |
+| DeepSeek-V4-Flash | `LLM_DeepSeekV4_Think` | 1,048,576 | 393,216 | high / xhigh（可关闭） |
+| DeepSeek-V4.1-Flash | `DeepSeek_V4.1_Flash_VE` | 1,048,576 | 393,216 | low / high / max（可关闭） |
+| openPangu-2.1-Pro | `OpenPanguV2-Pro` | 524,288 | 131,072 | low / medium / high |
+| GLM-5.3 | `LLM_GLM5.3` | 1,048,576 | 943,718 | low / high / max |
+| GLM-5.3-Flash | `GLM_5.3_FLASH_VE` | 1,048,576 | 943,718 | low / high / max |
+| MiniMax M3.1 Flash | `MiniMax_M3.1_Flash` | 1,048,576 | 524,288 | low / medium / high / xhigh / max |
+| Kimi K3.1 Pro | `Kimi_K3.1_Pro_VE` | 1,048,576 | 943,718 | low / high / max（可关闭） |
 
 能力解析说明：小艺远端的模型目录接口（`user-ability-gallery/v1/agent/user/query`）只返回名称、描述和积分倍率，不包含上下文；插件运行时从 OpenRouter `/api/v1/models` 按模型家族取值（与小艺桌面端 `enable_openrouter_model_context_window_tokens` 同源），失败时回退内置表。客户端模型设置里仍可按模型覆盖。
 
+思考档位同样取自 OpenRouter 的 `reasoning.supported_efforts`；客户端传入模型不支持的档位时会自动映射到最近档（如 `medium → high`）。ECPA「模型设置」里的默认可选档位来自内核的 Codex 模型目录模板，看到的 `low/medium/high` 是模板值，可在该页面按模型勾选 `max`。
+
 ## 安装
 
-1. 把 `xiaoyiwork-v0.6.9.dll` 放到 `<EasyCLIProxyAPI 目录>\cpa-core\plugins\windows\amd64\`。
+1. 把 `xiaoyiwork-v0.6.10.dll` 放到 `<EasyCLIProxyAPI 目录>\cpa-core\plugins\windows\amd64\`。
 2. 在 `cpa-core\config.yaml` 的 `plugins.configs` 下启用：
 
 ```yaml
@@ -127,7 +129,7 @@ go vet ./internal/...
 
 $env:PATH = 'C:\msys64\mingw64\bin;' + $env:PATH
 $env:CGO_ENABLED = '1'; $env:GOOS = 'windows'; $env:GOARCH = 'amd64'; $env:GOAMD64 = 'v1'
-go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o bin/xiaoyiwork-v0.6.9.dll ./cmd/xiaoyiwork-plugin
+go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o bin/xiaoyiwork-v0.6.10.dll ./cmd/xiaoyiwork-plugin
 ```
 
 必须使用 `-buildmode=c-shared`；CI 在 Linux 上用 `x86_64-w64-mingw32-gcc` 交叉编译。
@@ -136,7 +138,7 @@ go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o bin/xiaoyiwork-v0.6.9
 
 ```powershell
 go build -o bin/hostsim.exe ./cmd/hostsim
-.\bin\hostsim.exe -dll .\bin\xiaoyiwork-v0.6.9.dll -stream=false -prompt ping
+.\bin\hostsim.exe -dll .\bin\xiaoyiwork-v0.6.10.dll -stream=false -prompt ping
 ```
 
 ### 项目结构

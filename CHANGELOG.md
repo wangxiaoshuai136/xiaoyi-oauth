@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.6.10 (2026-11-28)
+
+- 思考档位改为按 OpenRouter 的 `reasoning.supported_efforts` 每模型动态下发，不再统一 `low/medium/high`：
+  - DeepSeek-V4.1-Flash：`low/high/max`（可关闭）
+  - DeepSeek-V4-Flash：`high/xhigh`（可关闭）
+  - GLM-5.3 / GLM-5.3-Flash：`low/high/max`（不可关闭）
+  - Kimi K3.1 Pro：`low/high/max`（可关闭）
+  - MiniMax M3.1 Flash：`low/medium/high/xhigh/max`
+- 客户端传入模型不支持的档位时自动映射到最近档（如 `medium → high`；GLM 收到 `none` 时降为 `low`），避免无效参数。
+- 说明：ECPA「模型设置」里的默认三项来自内核的 Codex 模型目录模板，不是小艺接口；该页面本身支持勾选 `max`，可在模型设置中按模型调整。
+
 ## v0.6.9 (2026-11-27)
 
 - 识别小艺权益/积分错误码 **111110**：不再显示笼统的 502「用户权益校验失败」，改为 **HTTP 402 `xiaoyiwork_quota_exhausted`**，提示“账号积分/权益不足，请充值或等待额度刷新（体验版每月 1 日 00:00 刷新）”。
