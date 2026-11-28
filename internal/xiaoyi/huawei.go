@@ -64,6 +64,7 @@ func AuthorizeURL(state, challenge string) string {
 	q.Set("code_challenge", challenge)
 	q.Set("code_challenge_method", "S256")
 	q.Set("state", state)
+	q.Set("prompt", "login")
 	q.Set("display", "page")
 	return HuaweiAuthorizeURL + "?" + q.Encode()
 }

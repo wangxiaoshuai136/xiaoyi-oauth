@@ -3,7 +3,7 @@
   "name": "Xiaoyi OAuth",
   "description": "Xiaoyi OAuth: sign in with a Huawei account (no XiaoyiWork desktop app needed), call Xiaoyi cloud models directly, and see AI points/plan quota. Windows only; PKCE OAuth + encrypted credential storage.",
   "author": "WenPaul",
-  "version": "0.6.15",
+  "version": "0.6.16",
   "license": "MIT",
   "tags": [
     "Provider",

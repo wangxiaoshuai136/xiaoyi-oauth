@@ -200,17 +200,10 @@ func (p *Plugin) handleAuthLoginPoll(raw []byte) (any, error) {
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &req)
 	}
+	state := strings.TrimSpace(req.State)
 	p.loginMu.Lock()
-	session := p.loginSessions[strings.TrimSpace(req.State)]
-	if session == nil || !sessionDone(session) {
-		for _, candidate := range p.loginSessions {
-			if candidate.err == nil && candidate.payload.UID != "" && sessionDone(candidate) {
-				session = candidate
-				break
-			}
-		}
-	}
-	if session == nil {
+	session := p.loginSessions[state]
+	if session == nil && state == "" {
 		session = p.loginSessions[p.lastLoginState]
 	}
 	p.loginMu.Unlock()
