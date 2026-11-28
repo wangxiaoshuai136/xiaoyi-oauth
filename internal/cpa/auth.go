@@ -142,6 +142,9 @@ func (p *Plugin) handleAuthRefresh(raw []byte) (any, error) {
 	if len(req.StorageJSON) > 0 {
 		_ = json.Unmarshal(req.StorageJSON, &payload)
 	}
+	if payload.UID == "" {
+		payload.UID = firstNonEmpty(req.AuthID, payload.AccountID)
+	}
 	payload = preferNewestPayload(payload)
 	if payload.BusinessCredential == "" {
 		return nil, pluginabi.NewError("xiaoyiwork_credential_unavailable", "凭据缺少 businessCredential，请重新登录", 503)

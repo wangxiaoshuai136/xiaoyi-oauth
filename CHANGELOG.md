@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.6.15 (2026-11-28)
+
+- 宿主刷新快照缺少 `uid` 时用 `AuthID` 兜底，避免找不到磁盘上的最新凭据、也避免用空 uid 去换 businessCredential。
+- 续期失败信息附带 uid/client/business 到期时间，便于快速定位。
+
 ## v0.6.14 (2026-11-28)
 
 - 修复宿主快照缺少 `business_valid_until` 时跳过判断失效的问题：从磁盘凭据补齐该字段，普通刷新不再无谓重建 businessCredential。

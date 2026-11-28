@@ -182,7 +182,7 @@ func (p *Plugin) refreshCloudAuth(ctx context.Context, auth *requestAuth, force 
 	}
 	if err != nil {
 		p.log("warn", fmt.Sprintf("小艺 businessCredential 续期失败 uid=%s client=%s: %v", auth.UID, auth.ClientID, err), nil)
-		return err
+		return fmt.Errorf("创建 business credential 失败（uid=%q client=%q bvu=%d）：%w", auth.UID, auth.ClientID, auth.BusinessValidUntil, err)
 	}
 	auth.Auth.BusinessCredential = credential
 	auth.BusinessValidUntil = validUntil
