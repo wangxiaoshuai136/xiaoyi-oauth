@@ -160,7 +160,10 @@ func (p *Plugin) authForRequest(req rpcExecutorRequest) (requestAuth, error) {
 
 // refreshCloudAuth renews the UAT (when needed) and issues a new business
 // credential, so the plugin keeps working without the desktop app running.
-func (p *Plugin) refreshCloudAuth(ctx context.Context, auth *requestAuth) error {
+func (p *Plugin) refreshCloudAuth(ctx context.Context, auth *requestAuth, force bool) error {
+	if !force && auth.Auth.BusinessCredential != "" && auth.BusinessValidUntil > time.Now().Unix()+7200 {
+		return nil
+	}
 	if err := p.ensureAccessToken(ctx, auth, false); err != nil {
 		return err
 	}
@@ -168,16 +171,22 @@ func (p *Plugin) refreshCloudAuth(ctx context.Context, auth *requestAuth) error 
 	if err != nil && auth.RefreshToken != "" {
 		// The stored UAT can be rotated by another client while still looking
 		// valid locally; renew it once and retry the credential exchange.
-		if refreshErr := p.ensureAccessToken(ctx, auth, true); refreshErr == nil {
+		if refreshErr := p.ensureAccessToken(ctx, auth, true); refreshErr != nil {
+			p.log("warn", fmt.Sprintf("小艺 UAT 续期失败 uid=%s: %v", auth.UID, refreshErr), nil)
+		} else {
 			credential, validUntil, err = xiaoyi.CreateBusinessCredential(ctx, auth.AccessToken, auth.UID, auth.DeviceID, auth.ClientID)
 		}
 	}
 	if err != nil {
+		p.log("warn", fmt.Sprintf("小艺 businessCredential 续期失败 uid=%s client=%s: %v", auth.UID, auth.ClientID, err), nil)
 		return err
 	}
 	auth.Auth.BusinessCredential = credential
 	auth.BusinessValidUntil = validUntil
 	p.cloudMu.Lock()
+	if p.cloudCache == nil {
+		p.cloudCache = map[string]xiaoyi.BusinessCredential{}
+	}
 	p.cloudCache[auth.UID] = xiaoyi.BusinessCredential{Credential: credential, UID: auth.UID, ValidUntil: validUntil}
 	p.cloudMu.Unlock()
 	p.persistCloudCredential(auth)
@@ -217,7 +226,7 @@ func (p *Plugin) doChat(ctx context.Context, auth *requestAuth, payload []byte) 
 		}
 		return nil, err
 	}
-	if refreshErr := p.refreshCloudAuth(ctx, auth); refreshErr != nil {
+	if refreshErr := p.refreshCloudAuth(ctx, auth, true); refreshErr != nil {
 		return nil, err
 	}
 	body, _, err = p.client.Chat(ctx, auth.Auth, payload)
@@ -238,7 +247,7 @@ func (p *Plugin) doChatStream(ctx context.Context, auth *requestAuth, payload []
 		}
 		return nil, err
 	}
-	if refreshErr := p.refreshCloudAuth(ctx, auth); refreshErr != nil {
+	if refreshErr := p.refreshCloudAuth(ctx, auth, true); refreshErr != nil {
 		return nil, err
 	}
 	body, _, err = p.client.ChatStream(ctx, auth.Auth, payload)

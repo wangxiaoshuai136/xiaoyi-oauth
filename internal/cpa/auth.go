@@ -162,7 +162,7 @@ func (p *Plugin) handleAuthRefresh(raw []byte) (any, error) {
 	}
 	ctx, cancel := context.WithTimeout(p.ctx, 30*time.Second)
 	defer cancel()
-	if err := p.refreshCloudAuth(ctx, &ra); err != nil {
+	if err := p.refreshCloudAuth(ctx, &ra, false); err != nil {
 		return nil, pluginabi.NewError("xiaoyiwork_refresh_failed", "凭据续期失败："+err.Error(), 502)
 	}
 	payload.BusinessCredential = ra.Auth.BusinessCredential
@@ -423,8 +423,28 @@ func preferNewestPayload(payload authFilePayload) authFilePayload {
 		if json.Unmarshal(raw, &stored) != nil {
 			continue
 		}
-		if stored.AccessTokenExp > newest.AccessTokenExp {
-			newest = stored
+		if newest.ClientID == "" {
+			newest.ClientID = stored.ClientID
+		}
+		if newest.DeviceID == "" {
+			newest.DeviceID = stored.DeviceID
+		}
+		if newest.RefreshToken == "" {
+			newest.RefreshToken = stored.RefreshToken
+		}
+		if newest.BusinessCredential == "" {
+			newest.BusinessCredential = stored.BusinessCredential
+			newest.BusinessValidUntil = stored.BusinessValidUntil
+		}
+		if newest.UID == "" {
+			newest.UID = stored.UID
+		}
+		if newest.AccountID == "" {
+			newest.AccountID = stored.AccountID
+		}
+		if stored.AccessTokenExp > newest.AccessTokenExp || newest.AccessToken == "" {
+			newest.AccessToken = stored.AccessToken
+			newest.AccessTokenExp = stored.AccessTokenExp
 		}
 	}
 	newest.Disabled = payload.Disabled
@@ -442,18 +462,19 @@ func preferNewestPayload(payload authFilePayload) authFilePayload {
 // of refreshing right after login.
 func nextRefreshAfter(payload authFilePayload) time.Time {
 	now := time.Now()
+	if payload.BusinessValidUntil > 0 {
+		at := time.Unix(payload.BusinessValidUntil, 0).Add(-2 * time.Hour)
+		if at.After(now) {
+			return at
+		}
+		return now
+	}
 	if payload.AccessTokenExp > 0 {
 		at := time.UnixMilli(payload.AccessTokenExp).Add(-10 * time.Minute)
 		if at.Before(now) {
 			return now
 		}
 		return at
-	}
-	if payload.BusinessValidUntil > 0 {
-		at := time.Unix(payload.BusinessValidUntil, 0).Add(-24 * time.Hour)
-		if at.After(now) {
-			return at
-		}
 	}
 	return now.Add(30 * time.Minute)
 }

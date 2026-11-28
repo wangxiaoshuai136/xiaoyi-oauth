@@ -42,7 +42,7 @@ func (p *Plugin) handleQuotaFetch(raw []byte) (any, error) {
 	defer cancel()
 	body, err := xiaoyi.QueryPrivilege(ctx, auth.Auth.BusinessCredential, auth.UID, auth.DeviceID)
 	if err != nil && xiaoyi.IsUnauthorized(err) {
-		if refreshErr := p.refreshCloudAuth(ctx, &auth); refreshErr == nil {
+		if refreshErr := p.refreshCloudAuth(ctx, &auth, true); refreshErr == nil {
 			body, err = xiaoyi.QueryPrivilege(ctx, auth.Auth.BusinessCredential, auth.UID, auth.DeviceID)
 		}
 	}
