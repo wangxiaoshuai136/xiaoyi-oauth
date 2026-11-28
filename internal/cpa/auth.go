@@ -424,25 +424,7 @@ func preferNewestPayload(payload authFilePayload) authFilePayload {
 		if json.Unmarshal(raw, &stored) != nil {
 			continue
 		}
-		if newest.ClientID == "" {
-			newest.ClientID = stored.ClientID
-		}
-		if newest.DeviceID == "" {
-			newest.DeviceID = stored.DeviceID
-		}
-		if newest.RefreshToken == "" {
-			newest.RefreshToken = stored.RefreshToken
-		}
-		if newest.BusinessCredential == "" {
-			newest.BusinessCredential = stored.BusinessCredential
-			newest.BusinessValidUntil = stored.BusinessValidUntil
-		}
-		if newest.UID == "" {
-			newest.UID = stored.UID
-		}
-		if newest.AccountID == "" {
-			newest.AccountID = stored.AccountID
-		}
+		newest = mergeMissingPayloadFields(newest, stored)
 		if stored.AccessTokenExp > newest.AccessTokenExp || newest.AccessToken == "" {
 			newest.AccessToken = stored.AccessToken
 			newest.AccessTokenExp = stored.AccessTokenExp
@@ -455,6 +437,33 @@ func preferNewestPayload(payload authFilePayload) authFilePayload {
 	}
 	if newest.UID == "" {
 		newest.UID = payload.UID
+	}
+	return newest
+}
+
+// mergeMissingPayloadFields fills plugin fields the host snapshot dropped
+// (notably business_valid_until) from the on-disk credential.
+func mergeMissingPayloadFields(newest, stored authFilePayload) authFilePayload {
+	if newest.ClientID == "" {
+		newest.ClientID = stored.ClientID
+	}
+	if newest.DeviceID == "" {
+		newest.DeviceID = stored.DeviceID
+	}
+	if newest.RefreshToken == "" {
+		newest.RefreshToken = stored.RefreshToken
+	}
+	if newest.BusinessCredential == "" {
+		newest.BusinessCredential = stored.BusinessCredential
+	}
+	if newest.BusinessValidUntil == 0 {
+		newest.BusinessValidUntil = stored.BusinessValidUntil
+	}
+	if newest.UID == "" {
+		newest.UID = stored.UID
+	}
+	if newest.AccountID == "" {
+		newest.AccountID = stored.AccountID
 	}
 	return newest
 }

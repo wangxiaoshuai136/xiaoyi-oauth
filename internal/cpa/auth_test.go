@@ -59,6 +59,35 @@ func TestNextRefreshAfterExpiredTokenRefreshesImmediately(t *testing.T) {
 	}
 }
 
+func TestMergeMissingPayloadFieldsRestoresHostDroppedFields(t *testing.T) {
+	host := authFilePayload{
+		UID:                "350086000118450207",
+		BusinessCredential: "cred",
+		AccessToken:        "uat",
+		AccessTokenExp:     time.Now().Add(time.Hour).UnixMilli(),
+	}
+	stored := authFilePayload{
+		UID:                "350086000118450207",
+		ClientID:           "6917612679526496902",
+		DeviceID:           "device",
+		RefreshToken:       "refresh",
+		BusinessValidUntil: time.Now().Add(7 * 24 * time.Hour).Unix(),
+	}
+	merged := mergeMissingPayloadFields(host, stored)
+	if merged.ClientID != stored.ClientID || merged.DeviceID != stored.DeviceID {
+		t.Fatalf("identity fields not restored: %+v", merged)
+	}
+	if merged.RefreshToken != stored.RefreshToken {
+		t.Fatalf("refresh token not restored: %+v", merged)
+	}
+	if merged.BusinessValidUntil != stored.BusinessValidUntil {
+		t.Fatalf("business validity not restored: %+v", merged)
+	}
+	if merged.BusinessCredential != "cred" || merged.AccessToken != "uat" {
+		t.Fatalf("host values must win when present: %+v", merged)
+	}
+}
+
 func TestNoteFromJSON(t *testing.T) {
 	if got := noteFromJSON([]byte(`{"note":" 小艺 "}`)); got != "小艺" {
 		t.Fatalf("note = %q", got)
