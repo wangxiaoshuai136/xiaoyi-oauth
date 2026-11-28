@@ -161,29 +161,17 @@ func (p *Plugin) authForRequest(req rpcExecutorRequest) (requestAuth, error) {
 // refreshCloudAuth renews the UAT (when needed) and issues a new business
 // credential, so the plugin keeps working without the desktop app running.
 func (p *Plugin) refreshCloudAuth(ctx context.Context, auth *requestAuth) error {
-	access := auth.AccessToken
-	if access == "" || (auth.AccessTokenExp > 0 && time.Now().UnixMilli() >= auth.AccessTokenExp) {
-		if auth.RefreshToken == "" {
-			return fmt.Errorf("refresh token 为空，需要重新登录小艺Work")
-		}
-		fresh, gatewayErr := xiaoyi.RefreshAccessToken(ctx, auth.Auth.BusinessCredential, auth.UID, auth.DeviceID, auth.RefreshToken)
-		var tokens xiaoyi.OAuthTokens
-		if gatewayErr == nil {
-			tokens = xiaoyi.OAuthTokens{AccessToken: fresh, ExpiresAt: time.Now().Add(time.Hour).UnixMilli()}
-		} else {
-			tokens, gatewayErr = xiaoyi.RefreshOAuth(ctx, auth.RefreshToken)
-			if gatewayErr != nil {
-				return gatewayErr
-			}
-		}
-		access = tokens.AccessToken
-		auth.AccessToken = tokens.AccessToken
-		auth.AccessTokenExp = tokens.ExpiresAt
-		if tokens.RefreshToken != "" {
-			auth.RefreshToken = tokens.RefreshToken
+	if err := p.ensureAccessToken(ctx, auth, false); err != nil {
+		return err
+	}
+	credential, validUntil, err := xiaoyi.CreateBusinessCredential(ctx, auth.AccessToken, auth.UID, auth.DeviceID, auth.ClientID)
+	if err != nil && auth.RefreshToken != "" {
+		// The stored UAT can be rotated by another client while still looking
+		// valid locally; renew it once and retry the credential exchange.
+		if refreshErr := p.ensureAccessToken(ctx, auth, true); refreshErr == nil {
+			credential, validUntil, err = xiaoyi.CreateBusinessCredential(ctx, auth.AccessToken, auth.UID, auth.DeviceID, auth.ClientID)
 		}
 	}
-	credential, validUntil, err := xiaoyi.CreateBusinessCredential(ctx, access, auth.UID, auth.DeviceID, auth.ClientID)
 	if err != nil {
 		return err
 	}
@@ -193,6 +181,25 @@ func (p *Plugin) refreshCloudAuth(ctx context.Context, auth *requestAuth) error 
 	p.cloudCache[auth.UID] = xiaoyi.BusinessCredential{Credential: credential, UID: auth.UID, ValidUntil: validUntil}
 	p.cloudMu.Unlock()
 	p.persistCloudCredential(auth)
+	return nil
+}
+
+// ensureAccessToken renews the Xiaoyi UAT through the cloud refresh-token
+// endpoint. The Huawei OAuth refresh grant requires a client_secret the plugin
+// does not have, so it must never be used as a fallback.
+func (p *Plugin) ensureAccessToken(ctx context.Context, auth *requestAuth, force bool) error {
+	if !force && auth.AccessToken != "" && auth.AccessTokenExp > time.Now().UnixMilli() {
+		return nil
+	}
+	if auth.RefreshToken == "" {
+		return fmt.Errorf("凭据缺少 refresh token，需要重新登录小艺Work")
+	}
+	fresh, err := xiaoyi.RefreshAccessToken(ctx, auth.Auth.BusinessCredential, auth.UID, auth.DeviceID, auth.RefreshToken)
+	if err != nil {
+		return fmt.Errorf("刷新小艺 UAT 失败：%w", err)
+	}
+	auth.AccessToken = fresh
+	auth.AccessTokenExp = time.Now().Add(time.Hour).UnixMilli()
 	return nil
 }
 

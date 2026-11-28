@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.6.11 (2026-11-28)
+
+- 修复**登录成功后账号立刻变成不可用**：宿主在文件重载或字段编辑后会用旧快照触发续期，插件只重建 businessCredential、不先换 UAT，失败后又回退到需要 `client_secret` 的华为换票接口，最终把账号标记为 error。
+- 续期改为先用小艺云 `refresh-token` 接口换 UAT；businessCredential 交换失败时自动换一次 UAT 再重试，单个失效 UAT 不再导致账号下线。
+- 移除不可用的华为 OAuth 刷新回退，错误信息不再显示误导性的“缺少 client_secret”。
+- `auth.parse` / `auth.refresh` / 登录轮询都会按 access token 到期时间（提前 10 分钟）下发 `NextRefreshAfter`，不再登录后立刻刷新。
+- 凭据同时写回宿主自有 auth 文件，避免核心重启后读到旧 token。
+
 ## v0.6.10 (2026-11-28)
 
 - 思考档位改为按 OpenRouter 的 `reasoning.supported_efforts` 每模型动态下发，不再统一 `low/medium/high`：

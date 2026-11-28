@@ -31,7 +31,7 @@ Xiaoyi OAuth 给 CLIProxyAPI（CPA）增加 `xiaoyiwork` 供应商：用华为�
 - **模型能力下发**：上下文窗口与最大输出随 `/v1/models` 下发，来源为 OpenRouter 公开模型目录（与小艺桌面端同源），6 小时缓存，失败回退内置表。
 - **标准协议**：OpenAI Chat Completions 输入/输出；流式补 `object`/`created`/`index`/唯一 `id`、合并 `tool_calls`、结束补 usage 与 `[DONE]`；非流式在插件内聚合；`/v1/responses` 由内核转换。
 - **思考档位**：模型声明 `low / medium / high`，允许关闭；`reasoning_effort` 透传云端，`reasoning_content` 保留。
-- **凭据管理**：登录成功立即落盘 `oauth/xiaoyiwork-<uid>.json`；6 小时或 401 自动续期；账号备注、`disabled`、`excluded_models` 等宿主字段在刷新/重载后保留。
+- **凭据管理**：登录成功立即落盘 `oauth/xiaoyiwork-<uid>.json`；access token 到期前自动经小艺云 `refresh-token` 换 UAT，businessCredential 失效时先换 UAT 再重试；账号备注、`disabled`、`excluded_models` 等宿主字段在刷新/重载后保留。
 - **额度卡片**：读取 billing `privilege/query`，按免费/赠送/购买/会员/补偿拆分积分，显示套餐与自然月刷新时间。
 - **空错误帧兜底**：`GLM-5.3-Flash` 在长结构化生成中可能被上游中断并返回 `data: {"error":{}}`；可选 `auto_fallback` 自动改用 `LLM-GLM5.3` 重跑（默认关闭）。
 

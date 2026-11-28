@@ -97,6 +97,7 @@ func (p *Plugin) handleAuthParse(raw []byte) (any, error) {
 	}
 	id := firstNonEmpty(payload.UID, payload.AccountID, "local")
 	auth := authData(id, payload.DisplayName, payload.KeySource, req.RawJSON)
+	auth.NextRefreshAfter = nextRefreshAfter(payload)
 	if note := noteFromJSON(req.RawJSON); note != "" {
 		if auth.Metadata == nil {
 			auth.Metadata = map[string]any{}
@@ -141,6 +142,7 @@ func (p *Plugin) handleAuthRefresh(raw []byte) (any, error) {
 	if len(req.StorageJSON) > 0 {
 		_ = json.Unmarshal(req.StorageJSON, &payload)
 	}
+	payload = preferNewestPayload(payload)
 	if payload.BusinessCredential == "" {
 		return nil, pluginabi.NewError("xiaoyiwork_credential_unavailable", "凭据缺少 businessCredential，请重新登录", 503)
 	}
@@ -175,7 +177,7 @@ func (p *Plugin) handleAuthRefresh(raw []byte) (any, error) {
 	// The host replaces its metadata with ours whenever we return any keys, so
 	// carry over host-managed fields such as the account note ("note").
 	preserveHostAuthFields(&auth, req.Metadata, req.Attributes)
-	auth.NextRefreshAfter = time.Now().Add(6 * time.Hour)
+	auth.NextRefreshAfter = nextRefreshAfter(payload)
 	return pluginapi.AuthRefreshResponse{Auth: auth, NextRefreshAfter: auth.NextRefreshAfter}, nil
 }
 
@@ -360,6 +362,7 @@ func (p *Plugin) persistCloudCredential(auth *requestAuth) {
 	if merged := mergeAuthPayload(raw, payload); merged != nil {
 		_ = os.WriteFile(path, merged, 0o600)
 	}
+	writeHostAuthCopy(auth.UID, payload)
 }
 
 // persistLoginPayload writes a fresh OAuth login to disk immediately, so the
@@ -379,7 +382,80 @@ func (p *Plugin) persistLoginPayload(payload authFilePayload) {
 	if merged := mergeAuthPayload(raw, payload); merged != nil {
 		_ = os.WriteFile(path, merged, 0o600)
 	}
+	writeHostAuthCopy(payload.UID, payload)
 	_ = os.Remove(filepath.Join(dir, authFileName))
+}
+
+// writeHostAuthCopy mirrors the credential into the host-owned auth file so a
+// core restart does not reload stale tokens from its own copy.
+func writeHostAuthCopy(uid string, payload authFilePayload) {
+	if uid == "" {
+		return
+	}
+	path := filepath.Join(resolveOAuthDir(), uid)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	if merged := mergeAuthPayload(raw, payload); merged != nil {
+		_ = os.WriteFile(path, merged, 0o600)
+	}
+}
+
+// preferNewestPayload keeps whichever copy of the credential carries the
+// freshest access token. The host may hand over a storage snapshot captured
+// before a re-login or a cloud refresh.
+func preferNewestPayload(payload authFilePayload) authFilePayload {
+	if payload.UID == "" {
+		return payload
+	}
+	dir := resolveOAuthDir()
+	newest := payload
+	for _, path := range []string{
+		filepath.Join(dir, "xiaoyiwork-"+payload.UID+".json"),
+		filepath.Join(dir, payload.UID),
+	} {
+		raw, err := os.ReadFile(path)
+		if err != nil || len(raw) == 0 {
+			continue
+		}
+		var stored authFilePayload
+		if json.Unmarshal(raw, &stored) != nil {
+			continue
+		}
+		if stored.AccessTokenExp > newest.AccessTokenExp {
+			newest = stored
+		}
+	}
+	newest.Disabled = payload.Disabled
+	newest.ExcludedModels = payload.ExcludedModels
+	if payload.Name != "" {
+		newest.Name = payload.Name
+	}
+	if newest.UID == "" {
+		newest.UID = payload.UID
+	}
+	return newest
+}
+
+// nextRefreshAfter spreads refreshes before the access token expires instead
+// of refreshing right after login.
+func nextRefreshAfter(payload authFilePayload) time.Time {
+	now := time.Now()
+	if payload.AccessTokenExp > 0 {
+		at := time.UnixMilli(payload.AccessTokenExp).Add(-10 * time.Minute)
+		if at.Before(now) {
+			return now
+		}
+		return at
+	}
+	if payload.BusinessValidUntil > 0 {
+		at := time.Unix(payload.BusinessValidUntil, 0).Add(-24 * time.Hour)
+		if at.After(now) {
+			return at
+		}
+	}
+	return now.Add(30 * time.Minute)
 }
 
 // storedProxyKey returns a local-proxy key persisted in the credential.

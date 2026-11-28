@@ -3,6 +3,7 @@ package cpa
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestMergeAuthPayloadKeepsHostFields(t *testing.T) {
@@ -36,6 +37,25 @@ func TestMergeAuthPayloadKeepsHostFields(t *testing.T) {
 	}
 	if doc["provider"] != PluginID || doc["oauth_provider"] != PluginID {
 		t.Fatalf("provider fields not updated: %v / %v", doc["provider"], doc["oauth_provider"])
+	}
+}
+
+func TestNextRefreshAfterUsesTokenExpiry(t *testing.T) {
+	exp := time.Now().Add(50 * time.Minute).UnixMilli()
+	got := nextRefreshAfter(authFilePayload{AccessTokenExp: exp})
+	want := time.UnixMilli(exp).Add(-10 * time.Minute)
+	if got.Sub(want).Abs() > time.Second {
+		t.Fatalf("expected refresh at %s, got %s", want, got)
+	}
+}
+
+func TestNextRefreshAfterExpiredTokenRefreshesImmediately(t *testing.T) {
+	got := nextRefreshAfter(authFilePayload{
+		AccessTokenExp: time.Now().Add(-time.Hour).UnixMilli(),
+		RefreshToken:   "refresh",
+	})
+	if time.Since(got) > time.Minute {
+		t.Fatalf("expired token should refresh immediately, got %s", got)
 	}
 }
 

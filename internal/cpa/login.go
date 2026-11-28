@@ -224,7 +224,7 @@ func (p *Plugin) handleAuthLoginPoll(raw []byte) (any, error) {
 		}
 		storage, _ := json.Marshal(session.payload)
 		auth := authData(session.payload.UID, session.payload.DisplayName, "oauth", storage)
-		auth.NextRefreshAfter = time.Now().Add(6 * time.Hour)
+		auth.NextRefreshAfter = nextRefreshAfter(session.payload)
 		return pluginapi.AuthLoginPollResponse{
 			Status:  pluginapi.AuthLoginStatusSuccess,
 			Message: "已登录：" + labelFor(session.payload),
