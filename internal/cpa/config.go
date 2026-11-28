@@ -23,6 +23,9 @@ type PluginConfig struct {
 	Debug bool
 	// AutoFallback retries an empty upstream error frame with a stronger model.
 	AutoFallback bool
+	// LoginBrowser selects who opens the sign-in page: "isolated" launches the
+	// default browser with a throwaway profile, "host" lets ECPA open it.
+	LoginBrowser string
 }
 
 // DefaultPluginConfig returns the documented defaults.
@@ -33,6 +36,7 @@ func DefaultPluginConfig() PluginConfig {
 		RouteUnprefixedModels: true,
 		RequestTimeoutSeconds: 600,
 		AutoFallback:          false,
+		LoginBrowser:          "isolated",
 	}
 }
 
@@ -69,6 +73,11 @@ func ParsePluginConfig(raw []byte) PluginConfig {
 			cfg.Debug = parseBool(value, cfg.Debug)
 		case "auto_fallback":
 			cfg.AutoFallback = parseBool(value, cfg.AutoFallback)
+		case "login_browser":
+			switch strings.ToLower(value) {
+			case "host", "isolated":
+				cfg.LoginBrowser = strings.ToLower(value)
+			}
 		}
 	}
 	if cfg.ModelPrefix != "" && !strings.HasSuffix(cfg.ModelPrefix, "/") {

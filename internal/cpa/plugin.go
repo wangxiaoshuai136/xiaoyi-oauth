@@ -23,7 +23,7 @@ const (
 	// UI appends " OAuth" to it, so it must not repeat the suffix.
 	AuthEntryName = "Xiaoyi"
 	// Version is the plugin release version.
-	Version = "0.6.16"
+	Version = "0.6.17"
 
 	authFileName = "xiaoyiwork-local.json"
 )
@@ -224,6 +224,13 @@ func (p *Plugin) handleRegister(raw []byte) (any, error) {
 					Type:        pluginapi.ConfigFieldTypeBoolean,
 					Default:     false,
 					Description: "GLM-5.3-Flash 返回空错误帧时自动改用 LLM-GLM5.3 重试（可完成任务，但积分消耗更高）",
+				},
+				{
+					Name:        "login_browser",
+					Type:        pluginapi.ConfigFieldTypeEnum,
+					Default:     "isolated",
+					EnumValues:  []string{"isolated", "host"},
+					Description: "登录窗口：isolated 用临时浏览器资料开独立窗口（可换账号）；host 只把授权地址交给 ECPA 打开",
 				},
 			},
 		},
