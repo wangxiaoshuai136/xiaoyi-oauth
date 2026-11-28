@@ -153,12 +153,13 @@ func (p *Plugin) handleAuthRefresh(raw []byte) (any, error) {
 			UID:                payload.UID,
 			DeviceID:           payload.DeviceID,
 		},
-		UID:            payload.UID,
-		DeviceID:       payload.DeviceID,
-		ClientID:       payload.ClientID,
-		AccessToken:    payload.AccessToken,
-		AccessTokenExp: payload.AccessTokenExp,
-		RefreshToken:   payload.RefreshToken,
+		UID:                payload.UID,
+		DeviceID:           payload.DeviceID,
+		ClientID:           payload.ClientID,
+		AccessToken:        payload.AccessToken,
+		AccessTokenExp:     payload.AccessTokenExp,
+		RefreshToken:       payload.RefreshToken,
+		BusinessValidUntil: payload.BusinessValidUntil,
 	}
 	ctx, cancel := context.WithTimeout(p.ctx, 30*time.Second)
 	defer cancel()

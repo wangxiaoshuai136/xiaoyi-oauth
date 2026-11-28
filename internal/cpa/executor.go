@@ -136,8 +136,10 @@ func (p *Plugin) authForRequest(req rpcExecutorRequest) (requestAuth, error) {
 		clientID = xiaoyi.HuaweiClientID
 	}
 	p.cloudMu.Lock()
+	businessValidUntil := payload.BusinessValidUntil
 	if cached, ok := p.cloudCache[uid]; ok && cached.Credential != "" {
 		credential = cached.Credential
+		businessValidUntil = cached.ValidUntil
 	}
 	p.cloudMu.Unlock()
 	if credential == "" {
@@ -149,12 +151,13 @@ func (p *Plugin) authForRequest(req rpcExecutorRequest) (requestAuth, error) {
 			UID:                uid,
 			DeviceID:           deviceID,
 		},
-		UID:            uid,
-		DeviceID:       deviceID,
-		ClientID:       clientID,
-		AccessToken:    payload.AccessToken,
-		AccessTokenExp: payload.AccessTokenExp,
-		RefreshToken:   refreshToken,
+		UID:                uid,
+		DeviceID:           deviceID,
+		ClientID:           clientID,
+		AccessToken:        payload.AccessToken,
+		AccessTokenExp:     payload.AccessTokenExp,
+		RefreshToken:       refreshToken,
+		BusinessValidUntil: businessValidUntil,
 	}, nil
 }
 

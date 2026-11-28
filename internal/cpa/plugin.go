@@ -23,7 +23,7 @@ const (
 	// UI appends " OAuth" to it, so it must not repeat the suffix.
 	AuthEntryName = "Xiaoyi"
 	// Version is the plugin release version.
-	Version = "0.6.12"
+	Version = "0.6.13"
 
 	authFileName = "xiaoyiwork-local.json"
 )
